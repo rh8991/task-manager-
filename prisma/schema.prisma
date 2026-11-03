@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  workers   Worker[]
+  meetings  MeetingRequest[] @relation("MeetingWithTeam")
+  createdAt DateTime  @default(now())
+}
+
+/// A worker has no login. They reach their personal page through a secret link (token).
+model Worker {
+  id            Int                @id @default(autoincrement())
+  name          String
+  email         String
+  token         String             @unique
+  active        Boolean            @default(true)
+  teamId        Int?
+  team          Team?              @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  tasks         Task[]
+  updates       TaskUpdate[]
+  equipment     EquipmentRequest[]
+  meetings      MeetingRequest[]
+  createdAt     DateTime           @default(now())
+}
+
+model Project {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  dueDate     DateTime? @db.Date
+  active      Boolean   @default(true)
+  tasks       Task[]
+  equipment   EquipmentRequest[]
+  createdAt   DateTime  @default(now())
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id             Int          @id @default(autoincrement())
+  title          String
+  description    String?
+  status         TaskStatus   @default(TODO)
+  priority       Priority     @default(MEDIUM)
+  dueDate        DateTime?    @db.Date
+  projectId      Int?
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assigneeId     Int?
+  assignee       Worker?      @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  completedAt    DateTime?
+  reminderSentAt DateTime?
+  updates        TaskUpdate[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([assigneeId, status])
+}
+
+/// Status history and comments. workerId is null when the manager made the change.
+model TaskUpdate {
+  id        Int         @id @default(autoincrement())
+  taskId    Int
+  task      Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workerId  Int?
+  worker    Worker?     @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  oldStatus TaskStatus?
+  newStatus TaskStatus?
+  comment   String?
+  createdAt DateTime    @default(now())
+
+  @@index([taskId])
+}
+
+enum EquipmentStatus {
+  PENDING   // waiting for manager approval
+  APPROVED  // approved, needs to be ordered
+  REJECTED
+  ORDERED
+  RECEIVED
+}
+
+model EquipmentRequest {
+  id          Int             @id @default(autoincrement())
+  item        String
+  quantity    Int             @default(1)
+  link        String?
+  estCost     Decimal?        @db.Decimal(10, 2)
+  notes       String?
+  neededBy    DateTime?       @db.Date
+  status      EquipmentStatus @default(PENDING)
+  managerNote String?
+  requesterId Int?
+  requester   Worker?         @relation(fields: [requesterId], references: [id], onDelete: SetNull)
+  projectId   Int?
+  project     Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  approvedAt  DateTime?
+  orderedAt   DateTime?
+  receivedAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+enum MeetingStatus {
+  OPEN       // a meeting is needed
+  SCHEDULED  // someone set it up (outside the system)
+  DONE
+  CANCELLED
+}
+
+/// Tracks the *need* for a meeting with another team. Booking happens outside the system.
+model MeetingRequest {
+  id          Int           @id @default(autoincrement())
+  topic       String
+  notes       String?
+  neededBy    DateTime?     @db.Date
+  status      MeetingStatus @default(OPEN)
+  withTeamId  Int?
+  withTeam    Team?         @relation("MeetingWithTeam", fields: [withTeamId], references: [id], onDelete: SetNull)
+  requesterId Int?
+  requester   Worker?       @relation(fields: [requesterId], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+/// Single row (id = 1) holding the manager's settings.
+model Settings {
+  id                 Int       @id @default(1)
+  managerName        String    @default("מנהל")
+  managerEmail       String?
+  notifyManager      Boolean   @default(true)
+  reportEnabled      Boolean   @default(false)
+  reportDay          Int       @default(0) // 0 = Sunday ... 6 = Saturday
+  reportHour         Int       @default(8) // 0-23, Israel time
+  scheduleUpdatedAt  DateTime  @default(now())
+  lastReportAt       DateTime?
+  remindersEnabled   Boolean   @default(true)
+  lastReminderDate   String?   // YYYY-MM-DD (Israel time) of the last due-date reminder run
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+  LOGGED // SMTP not configured: email was only written to the server log
+}
+
+model EmailLog {
+  id        Int         @id @default(autoincrement())
+  to        String
+  subject   String
+  kind      String
+  status    EmailStatus
+  error     String?
+  createdAt DateTime    @default(now())
+
+  @@index([createdAt])
+}

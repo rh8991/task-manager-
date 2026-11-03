@@ -1,6 +1,22 @@
 # Task Manager: Solution Options & Plan
 
-Status: **draft for review**. No code yet. Pick an option and answer the open questions (section 7), then build starts.
+Status: **Option C chosen and built (v1)**. See the decisions below. Sections 2–7 are the original proposal, kept for reference.
+
+## Decisions (from review)
+
+| Question | Decision | How v1 handles it |
+|---|---|---|
+| Option | **C: custom web app** | Next.js + PostgreSQL, deployed to the cloud |
+| Email provider | Workers have **personal emails, not always Gmail** | Plain SMTP, so it works with any provider. No Google or Microsoft dependency. |
+| Size | **30 workers + 1 manager** | Fits free tiers (Vercel + Neon + Brevo) |
+| Hosting | **Cloud** | Vercel (or any Node host) |
+| Login | **Not required for workers; email notifications are what matters** | Each worker has a secret personal link in every email. The manager panel uses one password. |
+| Equipment | **Manager approves. Needs a clean way to track what to order.** | Pending → Approved (to order) → Ordered → Received, plus Rejected. "To order" list and estimated total cost. |
+| Meetings | **Not booked, only track the need and which team** | Topic, with which team, needed by. Statuses: Needed / Scheduled / Done / Cancelled. |
+| Language | **Hebrew, RTL** | Whole UI and all emails in Hebrew RTL |
+| Reports | **Sent when the manager decides, optionally weekly** | A "send report now" button (all or selected workers, optional note) plus an optional weekly schedule (day + hour, Israel time) |
+
+Not in v1 (dropped from the original proposal per the decisions above): SSO, calendar integration, Slack/Teams, per-user notification settings.
 
 ---
 
