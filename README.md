@@ -49,9 +49,21 @@ Without `SMTP_HOST`, emails are printed to the server console and marked "not se
 
 Checks: `npm run typecheck` and `npm test`.
 
+## Database (Neon Postgres)
+
+| | |
+|---|---|
+| Organization | Technoda - science program (`org-lingering-haze-56034745`) |
+| Project | `task-manager` (`purple-grass-53608385`) |
+| Region | `aws-eu-central-1` (Frankfurt). Neon has no Israel region, and Frankfurt is the closest one. |
+| Postgres | 17 |
+| Branch / DB / role | `main` / `neondb` / `neondb_owner` |
+
+The app uses the pooled `DATABASE_URL`, and migrations use the direct `DATABASE_URL_UNPOOLED`. Both are in `.env.example` with the password left out. Never commit `.env`.
+
 ## Deploy to the cloud (free tier is enough for 30 workers)
 
-1. **Database:** create a free Postgres database on [Neon](https://neon.tech) and copy its connection string.
+1. **Database:** already created (see above). In Vercel, set `DATABASE_URL` and `DATABASE_URL_UNPOOLED` to the two Neon connection strings, with the real password filled in.
 2. **Email:** pick an SMTP provider. [Brevo](https://brevo.com) is free for 300 emails a day. Gmail also works with an App Password. Verify your sender address or domain with the provider so emails don't land in spam.
 3. **Hosting:** import this GitHub repo into [Vercel](https://vercel.com). Add the environment variables from `.env.example`. Set `APP_URL` to the Vercel address, and set `SESSION_SECRET` and `CRON_SECRET` to long random strings. Each deploy runs the database migrations automatically.
 4. **Scheduler (weekly report and reminders):**
