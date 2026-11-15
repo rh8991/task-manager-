@@ -152,10 +152,13 @@ describe("worker with personal link", () => {
     await assertFails(workerStatusBatch(anon(), "NOT-A-TOKEN", "w1", "t1").commit());
   });
 
-  it("cannot change the title, assignee or due date", async () => {
+  it("cannot change the title, assignee, due date or review dates", async () => {
     await assertFails(workerStatusBatch(anon(), "TOK1", "w1", "t1", { title: "hacked" }).commit());
     await assertFails(workerStatusBatch(anon(), "TOK1", "w1", "t1", { assigneeId: "w2" }).commit());
     await assertFails(workerStatusBatch(anon(), "TOK1", "w1", "t1", { dueDate: "2030-01-01" }).commit());
+    await assertFails(
+      workerStatusBatch(anon(), "TOK1", "w1", "t1", { reviews: [{ id: "x", date: "2030-01-01", note: null, done: true, doneAt: 1 }] }).commit(),
+    );
   });
 
   it("cannot set an invalid status", async () => {

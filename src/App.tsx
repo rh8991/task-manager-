@@ -5,6 +5,7 @@ import { firebaseConfigured } from "@/lib/firebase";
 import { Dashboard } from "@/pages/Dashboard";
 import { Login } from "@/pages/Login";
 import { WorkerPage } from "@/pages/WorkerPage";
+import { TaskView } from "@/pages/TaskView";
 import { Overview } from "@/pages/admin/Overview";
 import { TasksPage } from "@/pages/admin/Tasks";
 import { TaskDetail } from "@/pages/admin/TaskDetail";
@@ -36,6 +37,7 @@ export function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/login" element={<Login />} />
           <Route path="/w/:token" element={<WorkerPage />} />
+          <Route path="/task/:id" element={<TaskView />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
             <Route path="tasks" element={<TasksPage />} />

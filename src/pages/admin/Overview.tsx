@@ -6,6 +6,8 @@ import { EQUIPMENT_STATUS, MEETING_STATUS, TASK_STATUS } from "@/lib/labels";
 import { setEquipmentStatus } from "@/lib/actions";
 import type { EquipmentRequest, MeetingRequest, Task, TaskUpdate, Team, Worker } from "@/lib/types";
 import { Badge, Stat } from "@/components/ui";
+import { addDays } from "@/lib/dates";
+import { REVIEW_STATE, REVIEW_TONE, reviewState } from "@/lib/reviews";
 import { useAct } from "@/components/Flash";
 
 export function Overview() {
@@ -28,6 +30,11 @@ export function Overview() {
   const toOrder = equipment.data.filter((e) => e.status === "APPROVED").length;
   const openMeetings = meetings.data.filter((m) => m.status === "OPEN").sort((a, b) => a.createdAt - b.createdAt).slice(0, 8);
   const activeWorkers = workers.data.filter((w) => w.active).sort((a, b) => a.name.localeCompare(b.name, "he"));
+  // Review dates that are overdue or in the next 7 days, on open tasks.
+  const weekEnd = addDays(today, 7);
+  const upcomingReviews = open
+    .flatMap((t) => (t.reviews ?? []).filter((r) => !r.done && r.date <= weekEnd).map((r) => ({ t, r })))
+    .sort((a, b) => a.r.date.localeCompare(b.r.date));
   const approve = act((id: string, status: "APPROVED" | "REJECTED") => setEquipmentStatus(id, status), "הסטטוס עודכן");
 
   return (
@@ -45,7 +52,35 @@ export function Overview() {
         <Stat num={pending.length} label="ציוד ממתין לאישור" alert={pending.length > 0} />
         <Stat num={toOrder} label="ציוד להזמנה" />
         <Stat num={openMeetings.length} label="פגישות נדרשות" />
+        <Stat num={upcomingReviews.length} label="ביקורות השבוע" alert={upcomingReviews.some(({ r }) => r.date < today)} />
       </div>
+
+      <section className="card">
+        <h2>ביקורות קרובות (7 ימים) ובאיחור</h2>
+        {upcomingReviews.length === 0 ? (
+          <p className="empty">אין ביקורות בשבוע הקרוב</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>תאריך</th><th>משימה</th><th>מה בודקים</th><th>עובד/ת</th><th>מצב</th></tr></thead>
+              <tbody>
+                {upcomingReviews.map(({ t, r }) => {
+                  const st = reviewState(r, today);
+                  return (
+                    <tr key={`${t.id}-${r.id}`} className={st === "overdue" ? "overdue" : ""}>
+                      <td className={`nowrap ${st === "overdue" ? "danger-text" : ""}`}>{formatDate(r.date)}</td>
+                      <td><Link to={`/admin/tasks/${t.id}`}>{t.title}</Link></td>
+                      <td>{r.note ?? <span className="muted">—</span>}</td>
+                      <td>{(t.assigneeId && workerMap.get(t.assigneeId)?.name) ?? <span className="muted">לא שויך</span>}</td>
+                      <td><span className={`badge ${REVIEW_TONE[st]}`}>{REVIEW_STATE[st]}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-2">
         <section className="card">

@@ -1,4 +1,5 @@
 import { useCollection, useSettings } from "@/lib/data";
+import { ActForm } from "@/components/ActForm";
 import { formatDateTime } from "@/lib/dates";
 import { WEEKDAYS_HE } from "@/lib/labels";
 import { queueReport, queueTestEmail, saveSettings } from "@/lib/actions";
@@ -67,7 +68,7 @@ export function ReportsPage() {
           <p className="muted small" style={{ marginTop: 0 }}>
             כל עובד/ת מקבל/ת מייל אישי עם המשימות הפתוחות שלו/ה (באיחור, להיום, השבוע, בהמשך), סטטוס הציוד שביקש/ה והפגישות הנדרשות.
           </p>
-          <form action={onSend} className="stack">
+          <ActForm action={onSend} className="stack">
             <label>
               הודעה אישית בראש הדוח (לא חובה)
               <textarea name="note" placeholder="למשל: שבוע טוב! תזכורת שביום חמישי יש ישיבת צוות." />
@@ -83,13 +84,13 @@ export function ReportsPage() {
               <SubmitButton>שליחת דוח</SubmitButton>
               {s.lastReportAt && <span className="muted small">דוח אחרון נשלח: {formatDateTime(s.lastReportAt)}</span>}
             </div>
-          </form>
+          </ActForm>
         </section>
 
         <section className="card">
           <h2>הגדרות</h2>
           {/* key: re-mount with fresh defaults once settings load */}
-          <form action={onSave} className="stack" key={settings.loading ? "loading" : JSON.stringify(s)}>
+          <ActForm action={onSave} className="stack" key={settings.loading ? "loading" : JSON.stringify(s)} keepValues>
             <h3 style={{ margin: 0 }}>דוח שבועי אוטומטי</h3>
             <label className="check"><input type="checkbox" name="reportEnabled" defaultChecked={s.reportEnabled} /> לשלוח דוח לכל העובדים כל שבוע</label>
             <div className="fields">
@@ -121,7 +122,7 @@ export function ReportsPage() {
               <label>מייל<input name="managerEmail" type="email" dir="ltr" defaultValue={s.managerEmail ?? ""} /></label>
             </div>
             <div className="row"><SubmitButton>שמירת הגדרות</SubmitButton></div>
-          </form>
+          </ActForm>
           <button className="btn secondary sm" style={{ marginTop: ".75rem" }} onClick={() => onTest()}>שליחת מייל בדיקה אליי</button>
           <p className="muted small" style={{ marginBottom: 0 }}>
             {s.reportEnabled

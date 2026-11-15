@@ -13,6 +13,8 @@ Workers **don't log in**. Each one has a private personal link, included in ever
 | Area | What it does |
 |------|--------------|
 | **Tasks** | The manager creates tasks with an assignee, project, priority and due date. Statuses are To do / In progress / Blocked / Done, with a history of every change and comment. |
+| **Review dates** | Checkpoints on the way to a task's due date, each with a date and what is checked (e.g. "first draft"). The manager adds them when creating or editing a task and marks each one "done". Workers see them on their page; the board shows each task's next review; the manager's overview lists reviews due this week and overdue ones. The worker gets an email reminder the day before a review. |
+| **Task view** | Click any task on the shared board (or on a worker's page) to open its page: details, assignee, project, due date, the review timeline and the history of updates. |
 | **Notifications** | Email to the worker when they get a task (or one is moved to them), and a reminder the day before a task is due. Optional emails to the manager when a worker updates a task or asks for equipment or a meeting. |
 | **Email report** | Each worker gets their own report: open tasks grouped as overdue / today / this week / later, plus their equipment and meeting requests. The manager sends it on demand (to everyone or selected workers, with an optional note), or it goes out **weekly** at a day and hour the manager picks. |
 | **Shared board** | Who is working on what, overdue and blocked counts, equipment to order, and meetings needed between teams. It updates live, can be filtered by team, and has a TV mode. |

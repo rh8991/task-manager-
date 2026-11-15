@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ActForm } from "@/components/ActForm";
 import { Link, useSearchParams } from "react-router";
 import { byId, useCollection } from "@/lib/data";
 import { OPEN_TASKS } from "@/lib/queries";
@@ -9,10 +11,13 @@ import { oneOf, optDate, optStr, str } from "@/lib/formdata";
 import { Badge, Options } from "@/components/ui";
 import { useAct } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ReviewsEditor } from "@/components/Reviews";
+import { parseReviewField } from "@/lib/reviews";
 
 export function TasksPage() {
   const act = useAct();
   const [sp, setSp] = useSearchParams();
+  const [editorKey, setEditorKey] = useState(0); // re-mount the reviews editor after a save
   const today = todayLocal();
   const workers = useCollection<Worker>("workers");
   const projects = useCollection<Project>("projects");
@@ -45,7 +50,9 @@ export function TasksPage() {
       dueDate: optDate(fd, "dueDate"),
       projectId: optStr(fd, "projectId"),
       assigneeId,
+      reviews: parseReviewField(fd.get("reviews")),
     });
+    setEditorKey((k) => k + 1);
     return assigneeId ? "המשימה נוצרה. העובד/ת יקבל/תקבל מייל בדקות הקרובות." : "המשימה נוצרה";
   });
   const onStatus = act(async (fd: FormData) => {
@@ -62,7 +69,7 @@ export function TasksPage() {
 
       <details className="card" id="new" open={sp.get("new") === "1" || (!tasks.loading && tasks.data.length === 0) || undefined}>
         <summary>+ משימה חדשה</summary>
-        <form action={onCreate} className="stack">
+        <ActForm action={onCreate} className="stack">
           <label>כותרת<input name="title" required placeholder="מה צריך לעשות?" /></label>
           <label>תיאור<textarea name="description" placeholder="פרטים נוספים (לא חובה)" /></label>
           <div className="fields">
@@ -86,11 +93,12 @@ export function TasksPage() {
               <select name="priority" defaultValue="MEDIUM"><Options map={PRIORITY} /></select>
             </label>
           </div>
+          <ReviewsEditor key={editorKey} />
           <div className="row">
             <SubmitButton>יצירת משימה</SubmitButton>
             <span className="muted small">העובד/ת יקבל/תקבל מייל על המשימה החדשה (תוך כ-10 דקות).</span>
           </div>
-        </form>
+        </ActForm>
       </details>
 
       <form
@@ -146,13 +154,13 @@ export function TasksPage() {
                       <td><Badge value={t.priority} label={PRIORITY[t.priority]} /></td>
                       <td className={`nowrap ${late ? "danger-text" : ""}`}>{formatDate(t.dueDate) || "—"}</td>
                       <td>
-                        <form action={onStatus} className="inline-form">
+                        <ActForm action={onStatus} className="inline-form">
                           <input type="hidden" name="id" value={t.id} />
                           <select name="status" defaultValue={t.status} key={t.status} aria-label="סטטוס">
                             <Options map={TASK_STATUS} />
                           </select>
                           <SubmitButton className="btn ghost sm">עדכון</SubmitButton>
-                        </form>
+                        </ActForm>
                       </td>
                     </tr>
                   );

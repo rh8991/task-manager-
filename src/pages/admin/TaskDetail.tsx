@@ -1,8 +1,11 @@
 import { Link, useNavigate, useParams } from "react-router";
+import { ActForm } from "@/components/ActForm";
 import { useCollection, useDocument } from "@/lib/data";
 import { formatDateTime } from "@/lib/dates";
 import { PRIORITY, TASK_STATUS } from "@/lib/labels";
-import { deleteTask, resendTaskEmail, updateTask } from "@/lib/actions";
+import { deleteTask, resendTaskEmail, setReviewDone, updateTask } from "@/lib/actions";
+import { parseReviewField } from "@/lib/reviews";
+import { ReviewList, ReviewsEditor } from "@/components/Reviews";
 import { PRIORITIES, TASK_STATUSES, type Project, type Task, type TaskUpdate, type Worker } from "@/lib/types";
 import { oneOf, optDate, optStr, str } from "@/lib/formdata";
 import { Badge, Options } from "@/components/ui";
@@ -36,9 +39,14 @@ export function TaskDetail() {
       projectId: optStr(fd, "projectId"),
       assigneeId: optStr(fd, "assigneeId"),
       comment: optStr(fd, "comment"),
+      reviews: parseReviewField(fd.get("reviews")),
     });
     return reassigned ? "המשימה עודכנה. העובד/ת החדש/ה יקבל/תקבל מייל בדקות הקרובות." : "המשימה עודכנה";
   });
+  const onToggleReview = act(
+    (r: { id: string; done: boolean }) => setReviewDone(t.id, r.id, !r.done),
+    "הביקורת עודכנה",
+  );
   const onResend = act(() => resendTaskEmail(t.id), "המייל ייצא שוב בדקות הקרובות");
   const onDelete = act(async () => {
     if (!window.confirm("למחוק את המשימה?")) return;
@@ -51,14 +59,23 @@ export function TaskDetail() {
       <p className="small"><Link to="/admin/tasks">→ חזרה למשימות</Link></p>
       <div className="spread">
         <h1>{t.title}</h1>
-        <Badge value={t.status} label={TASK_STATUS[t.status]} />
+        <div className="row">
+          <Link to={`/task/${t.id}`} className="btn ghost sm">תצוגה</Link>
+          <Badge value={t.status} label={TASK_STATUS[t.status]} />
+        </div>
       </div>
+
+      <section className="card">
+        <h2>ביקורות בדרך לתאריך היעד</h2>
+        <ReviewList reviews={t.reviews} dueDate={t.dueDate} onToggle={(r) => onToggleReview(r)} />
+        <p className="muted small" style={{ marginBottom: 0 }}>מוסיפים, משנים או מוחקים תאריכי ביקורת בטופס העריכה למטה.</p>
+      </section>
 
       <div className="grid grid-2">
         <section className="card">
           <h2>עריכת משימה</h2>
           {/* key: re-mount the form with fresh default values when the task changes */}
-          <form action={onSave} className="stack" key={t.updatedAt}>
+          <ActForm action={onSave} className="stack" key={t.updatedAt} keepValues>
             <label>כותרת<input name="title" required defaultValue={t.title} /></label>
             <label>תיאור<textarea name="description" defaultValue={t.description ?? ""} /></label>
             <div className="fields">
@@ -81,12 +98,13 @@ export function TaskDetail() {
               <label>עדיפות<select name="priority" defaultValue={t.priority}><Options map={PRIORITY} /></select></label>
               <label>תאריך יעד<input type="date" name="dueDate" defaultValue={t.dueDate ?? ""} /></label>
             </div>
+            <ReviewsEditor initial={t.reviews} />
             <label>הערה להיסטוריה (לא חובה)<input name="comment" placeholder="למשל: הוחלט לדחות בשבוע" /></label>
             <div className="row">
               <SubmitButton>שמירה</SubmitButton>
               <span className="muted small">שינוי אחראי שולח מייל לעובד/ת החדש/ה.</span>
             </div>
-          </form>
+          </ActForm>
         </section>
 
         <section className="card">

@@ -131,3 +131,16 @@ code.link { direction: ltr; unicode-bidi: embed; font-size: .8rem; background: v
   .container { padding: 1rem .75rem 3rem; }
   h1 { font-size: 1.3rem; }
 }
+
+/* Review dates timeline */
+ol.reviews { list-style: none; margin: .4rem 0; padding: 0; display: grid; gap: .3rem; }
+.review { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .9rem; position: relative; padding-inline-start: 1.1rem; }
+.review-dot { position: absolute; inset-inline-start: 0; top: .45em; width: .6rem; height: .6rem; border-radius: 50%; background: var(--gray-fg); }
+.review.done .review-dot { background: var(--green-fg); }
+.review.overdue .review-dot { background: var(--danger); }
+.review.today .review-dot { background: var(--amber-fg); }
+.review.due .review-dot { background: var(--brand); border-radius: 2px; }
+.review-note { color: var(--ink); }
+.review.done .review-note { color: var(--muted); text-decoration: line-through; }
+a.task-link { color: inherit; }
+a.task-link:hover { color: var(--brand); }

@@ -10,6 +10,8 @@ export type ReportTask = {
   status: TaskStatus;
   priority: Priority;
   dueDate: string | null;
+  /** The next review date not yet done, if any. */
+  nextReview?: { date: string; note: string | null } | null;
 };
 
 export type GroupedTasks = {

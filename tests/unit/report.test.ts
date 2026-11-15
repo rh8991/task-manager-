@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { groupTasks, openTaskCount, type ReportTask } from "@/lib/report";
-import { esc, reportEmail, taskAssignedEmail } from "@/lib/email-templates";
+import { dueReminderEmail, esc, reportEmail, taskAssignedEmail } from "@/lib/email-templates";
 
 const d = (s: string) => s; // due dates are "YYYY-MM-DD" strings
 let n = 0;
@@ -76,5 +76,31 @@ describe("email templates", () => {
     expect(e.html).toContain("שבוע טוב");
     expect(e.html).toContain("https://app.example.com/w/abc");
     expect(e.text).toContain("מסך");
+  });
+});
+
+describe("review dates in emails", () => {
+  it("report shows the next review under a task", () => {
+    const e = reportEmail({
+      report: {
+        workerName: "דנה",
+        tasks: groupTasks([task({ title: "מצגת", dueDate: "2026-11-30", nextReview: { date: "2026-11-20", note: "טיוטה" } })], "2026-11-15"),
+        doneSinceLastReport: 0,
+        equipment: [],
+        meetings: [],
+      },
+      personalUrl: "https://x/#/w/a",
+      dashboardUrl: "https://x/#/?w=a",
+      managerName: "רון",
+    });
+    expect(e.html).toContain("ביקורת הבאה: 20/11/2026");
+    expect(e.html).toContain("טיוטה");
+  });
+
+  it("reminder email covers reviews tomorrow", () => {
+    const e = dueReminderEmail({ workerName: "דנה", tasks: [], reviews: [{ taskTitle: "מצגת", date: "2026-11-16", note: "<b>x</b>" }], personalUrl: "https://x" });
+    expect(e.subject).toBe('תזכורת: ביקורת מחר – "מצגת"');
+    expect(e.html).toContain("ביקורות מחר");
+    expect(e.html).not.toContain("<b>x</b>");
   });
 });

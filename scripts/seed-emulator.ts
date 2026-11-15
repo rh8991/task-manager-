@@ -62,7 +62,7 @@ async function main() {
   const site = (await db.collection("projects").add({ name: "אתר חדש", description: "השקת אתר החברה החדש", dueDate: day(30), active: true, createdAt: now })).id;
   const office = (await db.collection("projects").add({ name: "מעבר משרד", description: "מעבר לקומה 3", dueDate: day(45), active: true, createdAt: now })).id;
 
-  const base = { description: null, completedAt: null, lastComment: null, lastProofId: null, reminderSentAt: null, createdAt: now, updatedAt: now };
+  const base = { reviews: [] as object[], remindedReviewIds: [] as string[], description: null, completedAt: null, lastComment: null, lastProofId: null, reminderSentAt: null, createdAt: now, updatedAt: now };
   const tasks = [
     { title: "עיצוב דף הבית", assigneeId: ids[0], projectId: site, status: "IN_PROGRESS", priority: "HIGH", dueDate: day(2) },
     { title: "חיבור טופס צור קשר", assigneeId: ids[1], projectId: site, status: "TODO", priority: "MEDIUM", dueDate: day(1) },
@@ -93,8 +93,15 @@ async function main() {
       } as (typeof tasks)[number]);
     }
   });
+  // Review dates on the way to the due date: on the first task, plus every 4th task with a due date.
+  const rv = (id: string, date: string, note: string, done = false) => ({ id, date, note, done, doneAt: done ? now : null });
+  const withReviews = tasks.map((t, n) => {
+    if (n === 0) return { ...t, dueDate: day(10), reviews: [rv("r1", day(-1), "סקיצות ראשונות", true), rv("r2", day(1), "טיוטה לבדיקת מנהל"), rv("r3", day(6), "גרסה סופית לאישור")] };
+    if (t.dueDate && n % 4 === 0 && t.status !== "DONE") return { ...t, reviews: [rv(`r${n}`, addDays(t.dueDate, -2), "בדיקת התקדמות")] };
+    return t;
+  });
   const batch = db.batch();
-  for (const t of tasks) batch.set(db.collection("tasks").doc(), { ...base, ...t });
+  for (const t of withReviews) batch.set(db.collection("tasks").doc(), { ...base, ...t });
   await batch.commit();
   console.log(`${tasks.length} tasks`);
 

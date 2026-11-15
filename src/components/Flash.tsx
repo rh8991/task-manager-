@@ -32,20 +32,22 @@ export function errorText(e: unknown): string {
 }
 
 /**
- * Wraps an action for a <form action> or button: shows `success` (or the returned string) when
- * it works, and a readable error when it fails.
+ * Wraps an action for an <ActForm> or button: shows `success` (or the returned string) when
+ * it works, and a readable error when it fails. Resolves to true on success.
  */
 export function useAct() {
   const { show } = useContext(FlashContext);
   return useCallback(
     <A extends unknown[]>(fn: (...args: A) => Promise<string | void | boolean>, success?: string) =>
-      async (...args: A) => {
+      async (...args: A): Promise<boolean> => {
         try {
           const r = await fn(...args);
           const msg = typeof r === "string" ? r : success;
           if (msg) show(msg);
+          return true;
         } catch (e) {
           show(errorText(e), true);
+          return false;
         }
       },
     [show],

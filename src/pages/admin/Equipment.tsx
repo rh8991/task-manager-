@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from "react-router";
+import { ActForm } from "@/components/ActForm";
 import { byId, useCollection } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
 import { EQUIPMENT_STATUS } from "@/lib/labels";
@@ -85,7 +86,7 @@ export function EquipmentPage() {
 
       <details className="card">
         <summary>+ הוספת פריט להזמנה</summary>
-        <form action={onCreate} className="stack">
+        <ActForm action={onCreate} className="stack">
           <div className="fields">
             <label>פריט<input name="item" required /></label>
             <label>כמות<input name="quantity" type="number" min={1} defaultValue={1} /></label>
@@ -112,7 +113,7 @@ export function EquipmentPage() {
             <SubmitButton>הוספה</SubmitButton>
             <span className="muted small">פריט שהמנהל מוסיף נכנס ישר לרשימת &quot;להזמנה&quot;.</span>
           </div>
-        </form>
+        </ActForm>
       </details>
 
       <div className="row" style={{ marginBottom: ".75rem" }}>
@@ -162,14 +163,14 @@ export function EquipmentPage() {
                         ))}
                         <details>
                           <summary className="small">עוד</summary>
-                          <form action={onEdit} className="stack" style={{ minWidth: 200 }} key={`${e.status}|${e.managerNote}`}>
+                          <ActForm action={onEdit} className="stack" style={{ minWidth: 200 }} key={`${e.status}|${e.managerNote}`} keepValues>
                             <input type="hidden" name="id" value={e.id} />
                             <select name="status" defaultValue={e.status}>
                               {Object.entries(EQUIPMENT_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                             </select>
                             <input name="managerNote" defaultValue={e.managerNote ?? ""} placeholder="הערת מנהל (גלויה לעובד/ת)" />
                             <SubmitButton className="btn sm">שמירה</SubmitButton>
-                          </form>
+                          </ActForm>
                           <button className="btn danger sm" style={{ marginTop: ".4rem" }} onClick={() => onDelete(e.id)}>מחיקה</button>
                         </details>
                       </div>

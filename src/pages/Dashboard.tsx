@@ -5,6 +5,7 @@ import { dateKey, formatDate, todayLocal } from "@/lib/dates";
 import { EQUIPMENT_STATUS, MEETING_STATUS, TASK_STATUS } from "@/lib/labels";
 import type { EquipmentRequest, MeetingRequest, Project, Task, Team, Worker } from "@/lib/types";
 import { Badge, Stat } from "@/components/ui";
+import { nextReview } from "@/lib/reviews";
 
 /** Shared, read-only board: who is working on what, equipment to order, meetings needed. */
 export function Dashboard() {
@@ -116,14 +117,20 @@ export function Dashboard() {
                       {list.slice(0, 6).map((t) => {
                         const late = !!t.dueDate && dateKey(t.dueDate)! < today;
                         const project = t.projectId ? projectMap.get(t.projectId)?.name : null;
+                        const review = nextReview(t.reviews);
                         return (
                           <li key={t.id} className="spread" style={{ gap: ".4rem", flexWrap: "nowrap" }}>
                             <span style={{ minWidth: 0 }}>
-                              {t.title}
+                              <Link to={`/task/${t.id}${myToken ? `?w=${myToken}` : ""}`} className="task-link">{t.title}</Link>
                               <span className={`small ${late ? "danger-text" : "muted"}`}>
                                 {t.dueDate && ` · ${formatDate(t.dueDate)}`}
                                 {project && ` · ${project}`}
                               </span>
+                              {review && (
+                                <span className={`small ${review.date < today ? "danger-text" : "muted"}`} style={{ display: "block" }}>
+                                  ביקורת: {formatDate(review.date)}{review.note && ` – ${review.note}`}
+                                </span>
+                              )}
                             </span>
                             <Badge value={t.status} label={TASK_STATUS[t.status]} />
                           </li>

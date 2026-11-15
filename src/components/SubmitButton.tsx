@@ -1,4 +1,4 @@
-import { useFormStatus } from "react-dom";
+import { useFormPending } from "./ActForm";
 
 export function SubmitButton({
   children,
@@ -9,7 +9,7 @@ export function SubmitButton({
   className?: string;
   confirm?: string;
 }) {
-  const { pending } = useFormStatus();
+  const pending = useFormPending();
   return (
     <button
       type="submit"

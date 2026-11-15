@@ -35,6 +35,15 @@ export type Project = {
   createdAt: number;
 };
 
+/** A review (checkpoint) on the way to a task's due date. The manager sets and checks them. */
+export type Review = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  note: string | null; // what is checked, e.g. "draft ready"
+  done: boolean;
+  doneAt: number | null;
+};
+
 export type Task = {
   title: string;
   description: string | null;
@@ -47,6 +56,10 @@ export type Task = {
   lastComment: string | null;
   lastProofId: string | null;
   reminderSentAt: number | null;
+  /** Review dates on the way to the due date (missing on tasks created before this feature). */
+  reviews?: Review[];
+  /** Review ids that already got a "review tomorrow" email (written by the mailer). */
+  remindedReviewIds?: string[];
   createdAt: number;
   updatedAt: number;
 };

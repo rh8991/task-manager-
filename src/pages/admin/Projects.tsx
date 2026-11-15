@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { ActForm } from "@/components/ActForm";
 import { useCollection } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
 import { deleteProject, saveProject } from "@/lib/actions";
@@ -41,14 +42,14 @@ export function ProjectsPage() {
 
       <details className="card" open={(!projects.loading && list.length === 0) || undefined}>
         <summary>+ פרויקט חדש</summary>
-        <form action={onCreate} className="stack">
+        <ActForm action={onCreate} className="stack">
           <div className="fields">
             <label>שם הפרויקט<input name="name" required /></label>
             <label>תאריך יעד<input type="date" name="dueDate" /></label>
           </div>
           <label>תיאור<textarea name="description" /></label>
           <div><SubmitButton>יצירת פרויקט</SubmitButton></div>
-        </form>
+        </ActForm>
       </details>
 
       {!projects.loading && list.length === 0 && <p className="empty">עוד אין פרויקטים.</p>}
@@ -77,7 +78,7 @@ export function ProjectsPage() {
               </div>
               <details style={{ marginTop: ".75rem" }}>
                 <summary>עריכה</summary>
-                <form action={onUpdate} className="stack">
+                <ActForm action={onUpdate} className="stack" keepValues>
                   <input type="hidden" name="id" value={p.id} />
                   <div className="fields">
                     <label>שם<input name="name" required defaultValue={p.name} /></label>
@@ -86,7 +87,7 @@ export function ProjectsPage() {
                   <label>תיאור<textarea name="description" defaultValue={p.description ?? ""} /></label>
                   <label className="check"><input type="checkbox" name="active" defaultChecked={p.active} /> פרויקט פעיל</label>
                   <div className="row"><SubmitButton>שמירה</SubmitButton></div>
-                </form>
+                </ActForm>
                 <button className="btn danger sm" style={{ marginTop: ".5rem" }} onClick={() => onDelete(p.id)}>מחיקת פרויקט</button>
               </details>
             </section>

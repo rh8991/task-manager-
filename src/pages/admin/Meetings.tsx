@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from "react-router";
+import { ActForm } from "@/components/ActForm";
 import { byId, useCollection } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
 import { MEETING_STATUS } from "@/lib/labels";
@@ -58,7 +59,7 @@ export function MeetingsPage() {
 
       <details className="card">
         <summary>+ רישום צורך בפגישה</summary>
-        <form action={onCreate} className="stack">
+        <ActForm action={onCreate} className="stack">
           <div className="fields">
             <label>נושא<input name="topic" required /></label>
             <label>
@@ -79,7 +80,7 @@ export function MeetingsPage() {
           </div>
           <label>פרטים<textarea name="notes" placeholder="מה צריך לסגור בפגישה, מי צריך להשתתף…" /></label>
           <div><SubmitButton>שמירה</SubmitButton></div>
-        </form>
+        </ActForm>
       </details>
 
       <div className="row" style={{ marginBottom: ".75rem" }}>
@@ -115,13 +116,13 @@ export function MeetingsPage() {
                       <td><Badge value={m.status} label={MEETING_STATUS[m.status]} /></td>
                       <td>
                         <div className="row">
-                          <form action={onStatus} className="inline-form">
+                          <ActForm action={onStatus} className="inline-form">
                             <input type="hidden" name="id" value={m.id} />
                             <select name="status" defaultValue={m.status} key={m.status} aria-label="סטטוס">
                               {Object.entries(MEETING_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                             </select>
                             <SubmitButton className="btn ghost sm">עדכון</SubmitButton>
-                          </form>
+                          </ActForm>
                           <button className="btn danger sm" onClick={() => onDelete(m.id)}>מחיקה</button>
                         </div>
                       </td>

@@ -1,4 +1,6 @@
 import { formatDate } from "./dates";
+import { sortedReviews } from "./reviews";
+import type { Review } from "./types";
 import { EQUIPMENT_STATUS, MEETING_STATUS, PRIORITY, TASK_STATUS } from "./labels";
 import { openTaskCount, type ReportTask, type WorkerReport } from "./report";
 
@@ -48,6 +50,10 @@ function taskRows(tasks: ReportTask[]): string {
       (t) => `<tr>
   <td style="padding:8px;border-bottom:1px solid ${C.line};"><strong>${esc(t.title)}</strong>${
     t.projectName ? `<br><span style="color:${C.muted};font-size:12px;">${esc(t.projectName)}</span>` : ""
+  }${
+    t.nextReview
+      ? `<br><span style="color:${C.amber};font-size:12px;">ביקורת הבאה: ${formatDate(t.nextReview.date)}${t.nextReview.note ? ` – ${esc(t.nextReview.note)}` : ""}</span>`
+      : ""
   }</td>
   <td style="padding:8px;border-bottom:1px solid ${C.line};white-space:nowrap;">${esc(TASK_STATUS[t.status])}</td>
   <td style="padding:8px;border-bottom:1px solid ${C.line};white-space:nowrap;">${esc(PRIORITY[t.priority])}</td>
@@ -76,11 +82,12 @@ function taskText(title: string, tasks: ReportTask[]): string {
 
 export function taskAssignedEmail(p: {
   workerName: string;
-  task: ReportTask & { description: string | null };
+  task: ReportTask & { description: string | null; reviews?: Review[] };
   personalUrl: string;
   reassigned?: boolean;
 }) {
   const t = p.task;
+  const reviews = sortedReviews(t.reviews).filter((r) => !r.done);
   const subject = `משימה חדשה: ${t.title}`;
   const body = `<p>שלום ${esc(p.workerName)},</p>
 <p>${p.reassigned ? "הועברה אליך משימה:" : "קיבלת משימה חדשה:"}</p>
@@ -92,6 +99,13 @@ export function taskAssignedEmail(p: {
     עדיפות: <strong>${esc(PRIORITY[t.priority])}</strong><br>
     תאריך יעד: <strong>${t.dueDate ? formatDate(t.dueDate) : "לא נקבע"}</strong>
   </div>
+  ${
+    reviews.length
+      ? `<div style="margin-top:10px;font-size:14px;"><strong>תאריכי ביקורת בדרך:</strong><ul style="margin:4px 0 0;padding-right:20px;">${reviews
+          .map((r) => `<li>${formatDate(r.date)}${r.note ? ` – ${esc(r.note)}` : ""}</li>`)
+          .join("")}</ul></div>`
+      : ""
+  }
 </div>`;
   const text = `שלום ${p.workerName},\n${p.reassigned ? "הועברה אליך משימה" : "קיבלת משימה חדשה"}: ${t.title}\n${
     t.description ? `${t.description}\n` : ""
@@ -167,10 +181,38 @@ export function reportEmail(p: {
   };
 }
 
-export function dueReminderEmail(p: { workerName: string; tasks: ReportTask[]; personalUrl: string }) {
-  const subject = p.tasks.length === 1 ? `תזכורת: "${p.tasks[0].title}" מחר` : `תזכורת: ${p.tasks.length} משימות ליום מחר`;
-  const body = `<p>שלום ${esc(p.workerName)},</p><p>תזכורת – המשימות הבאות מגיעות לתאריך היעד מחר:</p>${taskSection("מחר", C.amber, p.tasks)}`;
-  const text = `שלום ${p.workerName},\nתזכורת – משימות לתאריך יעד מחר:${taskText("מחר", p.tasks)}\n${p.personalUrl}`;
+export function dueReminderEmail(p: {
+  workerName: string;
+  tasks: ReportTask[];
+  /** Review dates tomorrow (on tasks that may be due later). */
+  reviews?: { taskTitle: string; date: string; note: string | null }[];
+  personalUrl: string;
+}) {
+  const reviews = p.reviews ?? [];
+  const subject =
+    p.tasks.length && reviews.length
+      ? `תזכורת: ${p.tasks.length} משימות ו-${reviews.length} ביקורות מחר`
+      : reviews.length
+        ? reviews.length === 1
+          ? `תזכורת: ביקורת מחר – "${reviews[0].taskTitle}"`
+          : `תזכורת: ${reviews.length} ביקורות מחר`
+        : p.tasks.length === 1
+          ? `תזכורת: "${p.tasks[0].title}" מחר`
+          : `תזכורת: ${p.tasks.length} משימות ליום מחר`;
+  const reviewHtml = reviews.length
+    ? `<h2 style="font-size:16px;margin:20px 0 6px;color:${C.amber};">ביקורות מחר (${reviews.length})</h2><ul style="margin:0;padding-right:20px;">${reviews
+        .map((r) => `<li><strong>${esc(r.taskTitle)}</strong>${r.note ? ` – ${esc(r.note)}` : ""}</li>`)
+        .join("")}</ul>`
+    : "";
+  const body =
+    `<p>שלום ${esc(p.workerName)},</p>` +
+    (p.tasks.length ? `<p>תזכורת – המשימות הבאות מגיעות לתאריך היעד מחר:</p>${taskSection("מחר", C.amber, p.tasks)}` : "") +
+    reviewHtml;
+  const text =
+    `שלום ${p.workerName},\n` +
+    (p.tasks.length ? `תזכורת – משימות לתאריך יעד מחר:${taskText("מחר", p.tasks)}` : "") +
+    (reviews.length ? `\nביקורות מחר:\n${reviews.map((r) => `- ${r.taskTitle}${r.note ? ` – ${r.note}` : ""}`).join("\n")}\n` : "") +
+    `\n${p.personalUrl}`;
   return { subject, html: layout(subject, body, [{ label: "לעמוד המשימות שלי", href: p.personalUrl }]), text };
 }
 

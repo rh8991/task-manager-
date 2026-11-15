@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { dateKey } from "./dates";
+import { mergeReviews, validateReviews, type ReviewRow } from "./reviews";
 import type {
   EquipmentRequest,
   EquipmentStatus,
@@ -161,15 +162,26 @@ export async function deleteProject(id: string) {
 
 // ---------------------------------------------------------------- tasks
 
-export type TaskInput = Pick<Task, "title" | "description" | "priority" | "dueDate" | "projectId" | "assigneeId">;
+export type TaskInput = Pick<Task, "title" | "description" | "priority" | "dueDate" | "projectId" | "assigneeId"> & {
+  /** Review dates as edited in the form (ids kept for existing reviews). */
+  reviews: ReviewRow[];
+};
+
+function checkReviews(rows: ReviewRow[], dueDate: string | null) {
+  const err = validateReviews(rows, dueDate);
+  if (err) fail(err);
+}
 
 export async function createTask(input: TaskInput): Promise<string> {
   if (!input.title.trim()) fail("יש להזין כותרת למשימה");
+  checkReviews(input.reviews, input.dueDate);
   const ref = newRef("tasks");
   const t = now();
   const b = writeBatch(db);
   b.set(ref, {
     ...input,
+    reviews: mergeReviews(input.reviews, []),
+    remindedReviewIds: [],
     title: input.title.trim(),
     status: "TODO",
     completedAt: null,
@@ -190,10 +202,12 @@ export async function updateTask(id: string, input: TaskInput & { status: TaskSt
   const snap = await getDoc(doc(db, "tasks", id));
   if (!snap.exists()) fail("המשימה לא נמצאה");
   const before = snap.data() as Task;
-  const { comment, ...fields } = input;
+  checkReviews(input.reviews, input.dueDate);
+  const { comment, reviews, ...fields } = input;
   const b = writeBatch(db);
   b.update(doc(db, "tasks", id), {
     ...fields,
+    reviews: mergeReviews(reviews, before.reviews),
     title: input.title.trim(),
     completedAt: input.status === "DONE" ? (before.completedAt ?? now()) : null,
     // A new due date or assignee should get a fresh reminder.
@@ -217,6 +231,29 @@ export async function updateTask(id: string, input: TaskInput & { status: TaskSt
   if (reassigned) queue(b, { type: "task-assigned", taskId: id, reassigned: before.assigneeId !== null });
   await b.commit();
   return reassigned;
+}
+
+/** Marks one review as done (or not done again). */
+export async function setReviewDone(taskId: string, reviewId: string, done: boolean) {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  if (!snap.exists()) fail("המשימה לא נמצאה");
+  const task = snap.data() as Task;
+  const reviews = (task.reviews ?? []).map((r) => (r.id === reviewId ? { ...r, done, doneAt: done ? now() : null } : r));
+  const b = writeBatch(db);
+  b.update(doc(db, "tasks", taskId), { reviews, updatedAt: now() });
+  const r = reviews.find((x) => x.id === reviewId);
+  if (r) {
+    b.set(newRef("taskUpdates"), {
+      taskId,
+      workerId: null,
+      oldStatus: null,
+      newStatus: null,
+      comment: `${done ? "ביקורת בוצעה" : "ביקורת סומנה כלא בוצעה"}: ${r.date.split("-").reverse().join("/")}${r.note ? ` – ${r.note}` : ""}`,
+      proofId: null,
+      createdAt: now(),
+    });
+  }
+  await b.commit();
 }
 
 export async function setTaskStatus(id: string, status: TaskStatus, current: TaskStatus) {

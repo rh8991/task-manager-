@@ -15,12 +15,13 @@
  */
 import { cert, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore, type DocumentReference, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, type DocumentReference, type Firestore } from "firebase-admin/firestore";
 import nodemailer, { type Transporter } from "nodemailer";
 import { addDays, todayLocal } from "../src/lib/dates";
 import { dueReminderEmail, managerNoticeEmail, reportEmail, taskAssignedEmail } from "../src/lib/email-templates";
 import { groupTasks, type ReportTask, type WorkerReport } from "../src/lib/report";
 import { areRemindersDue, isWeeklyReportDue } from "../src/lib/schedule";
+import { nextReview } from "../src/lib/reviews";
 import {
   DEFAULT_SETTINGS,
   type EquipmentRequest,
@@ -163,6 +164,7 @@ const toReportTask = (d: Data, t: WithId<Task>): ReportTask => ({
   status: t.status,
   priority: t.priority,
   dueDate: t.dueDate,
+  nextReview: t.status === "DONE" ? null : nextReview(t.reviews),
 });
 
 /** Active worker with an email address, or null. */
@@ -241,7 +243,7 @@ async function handle(d: Data, item: OutboxDoc): Promise<string> {
       if (!t || !r) return "skipped: task or active assignee not found";
       const e = taskAssignedEmail({
         workerName: r.worker.name,
-        task: { ...toReportTask(d, t), description: t.description },
+        task: { ...toReportTask(d, t), description: t.description, reviews: t.reviews },
         personalUrl: personalUrl(r.token),
         reassigned: item.reassigned,
       });
@@ -344,17 +346,34 @@ async function dueReminders(d: Data, now: Date) {
   if (!claimed) return;
 
   const tomorrow = addDays(today, 1);
+  // Tasks due tomorrow (once per task) and review dates tomorrow (once per review).
   const due = d.tasks.filter((t) => t.dueDate === tomorrow && t.status !== "DONE" && !t.reminderSentAt && recipient(d, t.assigneeId));
-  const byWorker = new Map<string, WithId<Task>[]>();
-  for (const t of due) byWorker.set(t.assigneeId!, [...(byWorker.get(t.assigneeId!) ?? []), t]);
-  const emails = [...byWorker.entries()].map(([wid, list]) => {
-    const r = recipient(d, wid)!;
-    const e = dueReminderEmail({ workerName: r.worker.name, tasks: list.map((t) => toReportTask(d, t)), personalUrl: personalUrl(r.token) });
-    return { ...e, to: r.email, kind: "due-reminder" };
+  const reviews = d.tasks.flatMap((t) =>
+    t.status === "DONE" || !recipient(d, t.assigneeId)
+      ? []
+      : (t.reviews ?? [])
+          .filter((r) => r.date === tomorrow && !r.done && !(t.remindedReviewIds ?? []).includes(r.id))
+          .map((r) => ({ t, r })),
+  );
+  const byWorker = new Map<string, { tasks: WithId<Task>[]; reviews: { taskTitle: string; date: string; note: string | null }[] }>();
+  const slot = (wid: string) => byWorker.get(wid) ?? byWorker.set(wid, { tasks: [], reviews: [] }).get(wid)!;
+  for (const t of due) slot(t.assigneeId!).tasks.push(t);
+  for (const { t, r } of reviews) slot(t.assigneeId!).reviews.push({ taskTitle: t.title, date: r.date, note: r.note });
+
+  const emails = [...byWorker.entries()].map(([wid, x]) => {
+    const rc = recipient(d, wid)!;
+    const e = dueReminderEmail({
+      workerName: rc.worker.name,
+      tasks: x.tasks.map((t) => toReportTask(d, t)),
+      reviews: x.reviews,
+      personalUrl: personalUrl(rc.token),
+    });
+    return { ...e, to: rc.email, kind: "due-reminder" };
   });
   const result = await sendMany(emails);
   const batch = db.batch();
   due.forEach((t) => batch.update(db.doc(`tasks/${t.id}`), { reminderSentAt: now.getTime() }));
+  reviews.forEach(({ t, r }) => batch.update(db.doc(`tasks/${t.id}`), { remindedReviewIds: FieldValue.arrayUnion(r.id) }));
   await batch.commit();
   console.log(`reminders: ${result.sent}/${result.total} sent`);
 }

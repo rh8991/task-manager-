@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router";
+import { ActForm } from "@/components/ActForm";
 import { byId, useCollection, useDocument } from "@/lib/data";
 import { formatDate, formatDateTime, todayLocal } from "@/lib/dates";
 import { EQUIPMENT_STATUS, MEETING_STATUS, PRIORITY, TASK_STATUS } from "@/lib/labels";
@@ -7,6 +8,7 @@ import { TASK_STATUSES, type EquipmentRequest, type MeetingRequest, type Project
 import { oneOf, optDate, optInt, optNum, optStr, optUrl, str } from "@/lib/formdata";
 import { requestEquipment, requestMeeting, updateMyTask } from "@/lib/workerActions";
 import { Badge, Options } from "@/components/ui";
+import { ReviewList } from "@/components/Reviews";
 import { FlashBox, useAct } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
 import { UserError } from "@/lib/actions";
@@ -133,7 +135,7 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
                   return (
                     <div key={t.id} className={`task-item${late ? " overdue" : ""}`}>
                       <div className="spread">
-                        <strong>{t.title}</strong>
+                        <Link to={`/task/${t.id}?w=${token}`} className="task-link"><strong>{t.title}</strong></Link>
                         <div className="row">
                           <Badge value={t.priority} label={`עדיפות ${PRIORITY[t.priority]}`} />
                           <Badge value={t.status} label={TASK_STATUS[t.status]} />
@@ -144,15 +146,16 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
                         תאריך יעד: {t.dueDate ? formatDate(t.dueDate) : "לא נקבע"}
                       </div>
                       {t.description && <p className="pre" style={{ margin: ".4rem 0" }}>{t.description}</p>}
+                      <ReviewList reviews={t.reviews} compact />
                       {t.lastComment && <div className="muted small">עדכון אחרון: “{t.lastComment}” ({formatDateTime(t.updatedAt)})</div>}
-                      <form action={onUpdate} className="row" style={{ marginTop: ".5rem" }}>
+                      <ActForm action={onUpdate} className="row" style={{ marginTop: ".5rem" }}>
                         <input type="hidden" name="taskId" value={t.id} />
                         <select name="status" defaultValue={t.status} style={{ width: "auto" }} aria-label="סטטוס">
                           <Options map={TASK_STATUS} />
                         </select>
                         <input name="comment" maxLength={1000} placeholder="הערה (לא חובה)" style={{ flex: 1, minWidth: 160 }} />
                         <SubmitButton className="btn sm">עדכון</SubmitButton>
-                      </form>
+                      </ActForm>
                     </div>
                   );
                 })}
@@ -175,7 +178,7 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
         <div className="grid grid-2" style={{ marginTop: "1rem" }}>
           <section className="card">
             <h2>בקשת ציוד</h2>
-            <form action={onEquipment} className="stack">
+            <ActForm action={onEquipment} className="stack">
               <div className="fields">
                 <label>מה צריך?<input name="item" required maxLength={200} /></label>
                 <label>כמות<input name="quantity" type="number" min={1} max={10000} defaultValue={1} /></label>
@@ -192,7 +195,7 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
               <label>קישור למוצר (לא חובה)<input name="link" type="url" dir="ltr" maxLength={500} placeholder="https://" /></label>
               <label>הערות<textarea name="notes" maxLength={2000} /></label>
               <div><SubmitButton>שליחה לאישור המנהל</SubmitButton></div>
-            </form>
+            </ActForm>
             {equipment.data.length > 0 && (
               <>
                 <h3 style={{ marginTop: "1rem" }}>הבקשות שלי</h3>
@@ -212,7 +215,7 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
 
           <section className="card">
             <h2>צריך פגישה עם צוות אחר?</h2>
-            <form action={onMeeting} className="stack">
+            <ActForm action={onMeeting} className="stack">
               <label>נושא<input name="topic" required maxLength={200} /></label>
               <div className="fields">
                 <label>
@@ -226,7 +229,7 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
               </div>
               <label>פרטים<textarea name="notes" maxLength={2000} placeholder="מה צריך לסגור, מי צריך להשתתף…" /></label>
               <div><SubmitButton>רישום</SubmitButton></div>
-            </form>
+            </ActForm>
             {meetings.data.length > 0 && (
               <>
                 <h3 style={{ marginTop: "1rem" }}>הבקשות שלי</h3>

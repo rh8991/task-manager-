@@ -1,4 +1,5 @@
 import { byId, useCollection } from "@/lib/data";
+import { ActForm } from "@/components/ActForm";
 import { OPEN_TASKS } from "@/lib/queries";
 import { UserError, createTeam, createWorker, createWorkers, deleteTeam, deleteWorker, regenerateWorkerLink, updateWorker } from "@/lib/actions";
 import type { Task, Team, Worker, WorkerPrivate } from "@/lib/types";
@@ -70,22 +71,22 @@ export function WorkersPage() {
       <div className="grid grid-2">
         <section className="card">
           <h2>הוספת עובד/ת</h2>
-          <form action={onCreate} className="stack">
+          <ActForm action={onCreate} className="stack">
             <div className="fields">
               <label>שם מלא<input name="name" required /></label>
               <label>מייל (כל כתובת)<input name="email" type="email" required dir="ltr" placeholder="name@example.com" /></label>
               <label>צוות<TeamSelect /></label>
             </div>
             <div><SubmitButton>הוספה</SubmitButton></div>
-          </form>
+          </ActForm>
         </section>
 
         <section className="card">
           <h2>צוותים</h2>
-          <form action={onTeam} className="row" style={{ marginBottom: ".75rem" }}>
+          <ActForm action={onTeam} className="row" style={{ marginBottom: ".75rem" }}>
             <input name="name" required placeholder="שם צוות חדש" style={{ maxWidth: 240 }} />
             <SubmitButton className="btn secondary">הוספת צוות</SubmitButton>
-          </form>
+          </ActForm>
           {sortedTeams.length === 0 ? (
             <p className="empty">עוד אין צוותים. צוותים משמשים גם לבקשות פגישה בין צוותים.</p>
           ) : (
@@ -140,14 +141,14 @@ export function WorkersPage() {
                       <td>
                         <details>
                           <summary className="small">עריכה</summary>
-                          <form action={onUpdate} className="stack" style={{ minWidth: 240 }} key={`${w.name}|${priv?.email}|${w.teamId}|${w.active}`}>
+                          <ActForm action={onUpdate} className="stack" style={{ minWidth: 240 }} key={`${w.name}|${priv?.email}|${w.teamId}|${w.active}`} keepValues>
                             <input type="hidden" name="id" value={w.id} />
                             <label>שם<input name="name" required defaultValue={w.name} /></label>
                             <label>מייל<input name="email" type="email" required dir="ltr" defaultValue={priv?.email} /></label>
                             <label>צוות<TeamSelect value={w.teamId} /></label>
                             <label className="check"><input type="checkbox" name="active" defaultChecked={w.active} /> פעיל/ה (מקבל/ת מיילים)</label>
                             <SubmitButton className="btn sm">שמירה</SubmitButton>
-                          </form>
+                          </ActForm>
                           <div className="row" style={{ marginTop: ".5rem" }}>
                             <button className="btn ghost sm" onClick={() => onRegenerate(w.id)}>קישור חדש</button>
                             <button className="btn danger sm" onClick={() => onDelete(w)}>מחיקה</button>
