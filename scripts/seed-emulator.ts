@@ -10,6 +10,13 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { addDays, todayLocal } from "../src/lib/dates";
 
+if (process.argv.includes("--emulator")) {
+  process.env.FIRESTORE_EMULATOR_HOST ||= "127.0.0.1:8080";
+  process.env.FIREBASE_AUTH_EMULATOR_HOST ||= "127.0.0.1:9099";
+  process.env.GCLOUD_PROJECT ||= "demo-task-manager";
+  process.env.ADMIN_EMAILS ||= "manager@example.com";
+}
+
 if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
   console.error("Set FIRESTORE_EMULATOR_HOST and FIREBASE_AUTH_EMULATOR_HOST - this script only seeds the emulators.");
   process.exit(1);

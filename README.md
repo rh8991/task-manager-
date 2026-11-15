@@ -54,18 +54,39 @@ firestore.rules       security rules (deployed by the deploy workflow)
 .github/workflows/    deploy (Pages + rules), mailer (every 10 min), ci
 ```
 
-## Run locally (no Firebase account needed)
+## Try it on your own computer (no Firebase account needed)
 
-Requires Node 20+ and Java 11+ (for the Firebase emulators).
+Everything runs locally with demo data (30 workers). Nothing is emailed for real.
 
+**Install once** (Windows, macOS or Linux):
+1. **Node.js 22 LTS**: https://nodejs.org (the "LTS" button).
+2. **Java 21**: https://adoptium.net (Temurin 21). The local Firebase database needs it.
+3. **Git**: https://git-scm.com.
+
+**Then, in a terminal** (on Windows: PowerShell):
 ```bash
+git clone https://github.com/rh8991/task-manager-.git
+cd task-manager-
+git checkout claude/great-wright-3qfhuq   # until it's merged into main
 npm install
-npm run emulators          # terminal 1: local Firestore + Auth
-npm run seed               # terminal 2: demo data; prints workers' personal links
-npm run mailer:emulator    # grants manager access to manager@example.com, "sends" queued emails (printed)
-npm run dev:emulator       # http://localhost:5173 (manager: manager@example.com / manager123)
+npm run demo
 ```
+Wait for the box that says **Open: http://localhost:5173**, then open that address:
+- **Manager:** click **ניהול** (manage) → `manager@example.com` / `manager123`
+- **A worker's view:** Workers page → **פתיחה** (open) next to any worker
+- **Emails:** the mailer runs every minute; each email is printed in the terminal and listed in the email log on the Reports page
 
+Stop with **Ctrl+C**. Each `npm run demo` starts fresh.
+
+The first run downloads the Firebase emulator (about 1–2 minutes). On Windows, if the firewall asks about Java or Node, click **Allow**.
+
+### For developers
+```bash
+npm run emulators          # terminal 1: local Firestore + Auth (keeps data while running)
+npm run seed               # terminal 2: demo data
+npm run mailer:emulator    # grant manager access + process queued emails (run again any time)
+npm run dev:emulator       # http://localhost:5173
+```
 Checks: `npm run typecheck`, `npm test` (unit), `npm run test:rules` (security rules on the emulator), `npm run build`.
 
 ## Deploy

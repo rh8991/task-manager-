@@ -12,9 +12,10 @@
     "test:rules": "firebase emulators:exec --only firestore --project demo-task-manager \"vitest run tests/rules\"",
     "emulators": "firebase emulators:start --only auth,firestore --project demo-task-manager",
     "mailer": "tsx scripts/mailer.ts",
-    "seed": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-task-manager tsx scripts/seed-emulator.ts",
-    "mailer:emulator": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-task-manager ADMIN_EMAILS=manager@example.com tsx scripts/mailer.ts",
-    "dev:emulator": "VITE_USE_EMULATORS=true vite"
+    "seed": "tsx scripts/seed-emulator.ts --emulator",
+    "mailer:emulator": "tsx scripts/mailer.ts --emulator",
+    "dev:emulator": "vite --mode emulator",
+    "demo": "firebase emulators:exec --only auth,firestore --project demo-task-manager \"tsx scripts/demo.ts\""
   },
   "engines": {
     "node": ">=20"

@@ -35,6 +35,13 @@ import {
   type WorkerPrivate,
 } from "../src/lib/types";
 
+if (process.argv.includes("--emulator")) {
+  process.env.FIRESTORE_EMULATOR_HOST ||= "127.0.0.1:8080";
+  process.env.FIREBASE_AUTH_EMULATOR_HOST ||= "127.0.0.1:9099";
+  process.env.GCLOUD_PROJECT ||= "demo-task-manager";
+  process.env.ADMIN_EMAILS ||= "manager@example.com";
+}
+
 // ---------------------------------------------------------------- setup
 
 const env = process.env;
