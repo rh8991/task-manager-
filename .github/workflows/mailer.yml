@@ -1,0 +1,39 @@
+# Sends the app's emails (new tasks, manager notices, reports, reminders) every 10 minutes.
+# GitHub may start scheduled runs a few minutes late. Run it by hand: Actions → mailer → Run workflow.
+# Note: GitHub pauses scheduled workflows after 60 days without any repository activity; it emails
+# the repo owner first, and one click on "Enable workflow" turns it back on.
+name: mailer
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mailer
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run mailer
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          APP_URL: ${{ vars.APP_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}

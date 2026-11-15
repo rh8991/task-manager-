@@ -1,36 +1,43 @@
 {
   "name": "task-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
-    "start": "next start",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "db:seed": "tsx prisma/seed.ts",
-    "postinstall": "prisma generate",
-    "db:migrate": "prisma migrate dev"
+    "test": "vitest run tests/unit",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-task-manager \"vitest run tests/rules\"",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-task-manager",
+    "mailer": "tsx scripts/mailer.ts",
+    "seed": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-task-manager tsx scripts/seed-emulator.ts",
+    "mailer:emulator": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-task-manager ADMIN_EMAILS=manager@example.com tsx scripts/mailer.ts",
+    "dev:emulator": "VITE_USE_EMULATORS=true vite"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
-    "next": "^16.4.4",
-    "nodemailer": "^10.3.1",
+    "firebase": "^12.19.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "server-only": "^0.0.1"
+    "react-router": "^7.18.5"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/node": "^22.20.5",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "prisma": "^6.19.3",
+    "@vitejs/plugin-react": "^6.3.0",
+    "firebase-admin": "^13.10.0",
+    "firebase-tools": "^15.36.0",
+    "nodemailer": "^10.5.0",
     "tsx": "^4.23.15",
     "typescript": "~5.9",
+    "vite": "^8.3.8",
     "vitest": "^5.1.0"
-  },
-  "engines": {
-    "node": ">=20"
   }
 }

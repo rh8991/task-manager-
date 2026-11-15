@@ -1,15 +1,15 @@
-import type { EquipmentStatus, MeetingStatus, Priority, TaskStatus } from "@prisma/client";
+import type { EquipmentStatus, MeetingStatus, Priority, TaskStatus } from "./types";
 import { addDays, dateKey } from "./dates";
 
 /** Pure report logic (no database), so it can be unit-tested. */
 
 export type ReportTask = {
-  id: number;
+  id: string;
   title: string;
   projectName: string | null;
   status: TaskStatus;
   priority: Priority;
-  dueDate: Date | null;
+  dueDate: string | null;
 };
 
 export type GroupedTasks = {

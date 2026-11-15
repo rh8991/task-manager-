@@ -1,4 +1,4 @@
-import type { EquipmentStatus, MeetingStatus, Priority, TaskStatus } from "@prisma/client";
+import type { EquipmentStatus, MeetingStatus, Priority, TaskStatus } from "./types";
 
 export const TASK_STATUS: Record<TaskStatus, string> = {
   TODO: "לביצוע",

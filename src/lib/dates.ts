@@ -43,19 +43,18 @@ export function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** A stored date-only value as YYYY-MM-DD. */
-export function dateKey(d: Date | null | undefined): string | null {
-  return d ? d.toISOString().slice(0, 10) : null;
+/** A due date is stored as "YYYY-MM-DD" (or null). Returns it only if well-formed. */
+export function dateKey(d: string | null | undefined): string | null {
+  return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 }
 
-/** Parses a form value "YYYY-MM-DD" into a Date for a @db.Date column (or null). */
-export function parseDateInput(v: FormDataEntryValue | null): Date | null {
-  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
-  return new Date(`${v}T00:00:00Z`);
+/** Reads a form value "YYYY-MM-DD" (empty → null). */
+export function parseDateInput(v: FormDataEntryValue | null): string | null {
+  return typeof v === "string" ? dateKey(v) : null;
 }
 
 /** Display a date-only value as DD/MM/YYYY. */
-export function formatDate(d: Date | null | undefined): string {
+export function formatDate(d: string | null | undefined): string {
   const k = dateKey(d);
   if (!k) return "";
   const [y, m, day] = k.split("-");
@@ -63,8 +62,8 @@ export function formatDate(d: Date | null | undefined): string {
 }
 
 /** Display a timestamp in Israel time as DD/MM/YYYY HH:MM. */
-export function formatDateTime(d: Date | null | undefined): string {
-  if (!d) return "";
+export function formatDateTime(d: Date | number | null | undefined): string {
+  if (d === null || d === undefined) return "";
   return new Intl.DateTimeFormat("he-IL", {
     timeZone: TZ,
     day: "2-digit",

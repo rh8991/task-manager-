@@ -1,84 +1,72 @@
 # Task Manager (ניהול משימות)
 
-A Hebrew, right-to-left task management web app for a team of about 30 workers and one manager.
+A Hebrew, right-to-left task manager for a team of about 30 workers and a manager. It runs entirely on **free services**:
 
-- **Workers don't log in.** Each worker gets a private personal link (included in every email). From it they can see their tasks, update a task's status, and ask for equipment or a meeting.
-- **Email is the main channel.** Emails go to any address (Gmail, Outlook, Walla, a company domain…).
-- **The manager panel** sits behind one password.
+- **GitHub Pages** hosts the website (static files).
+- **Firebase** (free Spark plan) stores the data in **Firestore** and handles the manager's sign-in (**Firebase Auth**).
+- **GitHub Actions** runs a small **mailer** every 10 minutes that sends the emails through an SMTP service such as Brevo.
+
+Workers **don't log in**. Each one has a private personal link, included in every email, where they see their tasks, update a status, and ask for equipment or a meeting. The manager signs in with email and password.
 
 ## Features
 
 | Area | What it does |
 |------|--------------|
-| **Tasks** | The manager creates tasks with an assignee, project, priority and due date. Statuses are To do / In progress / Blocked / Done, and every change and comment is kept in the task's history. |
+| **Tasks** | The manager creates tasks with an assignee, project, priority and due date. Statuses are To do / In progress / Blocked / Done, with a history of every change and comment. |
 | **Notifications** | Email to the worker when they get a task (or one is moved to them), and a reminder the day before a task is due. Optional emails to the manager when a worker updates a task or asks for equipment or a meeting. |
-| **Email report** | Each worker gets their own report: open tasks grouped as overdue / today / this week / later, plus their equipment requests and meeting needs. The manager sends it with **"שליחת דוח"** (send report), either to everyone or to selected workers, and can add a personal note. It can also go out automatically **every week** on a day and hour the manager picks. |
-| **Shared dashboard** | `/` shows who is working on what, counts of overdue, blocked and in-progress tasks, what equipment needs to be ordered, and the meetings needed between teams. It can be filtered by team, and has a TV/wall mode (`?tv=1`, refreshes every 2 minutes). |
-| **Equipment** | A worker asks for an item. The manager approves or rejects it, then marks it ordered and received. "Approved" is the list of items still to order, with an estimated total cost. |
-| **Meetings** | Records that a meeting is needed, with which team, and by when. Booking happens outside the system; the manager marks it scheduled or done. |
-| **Email log** | Every email sent, failed, or only logged is listed on the Reports page. |
+| **Email report** | Each worker gets their own report: open tasks grouped as overdue / today / this week / later, plus their equipment and meeting requests. The manager sends it on demand (to everyone or selected workers, with an optional note), or it goes out **weekly** at a day and hour the manager picks. |
+| **Shared board** | Who is working on what, overdue and blocked counts, equipment to order, and meetings needed between teams. It updates live, can be filtered by team, and has a TV mode. |
+| **Equipment** | A worker asks for an item, and the manager approves or rejects it, then marks it ordered and received. "Approved" is the list of items still to order, with an estimated total cost. |
+| **Meetings** | Records that a meeting is needed, with which team and by when. Booking happens outside the system. |
 
-## Tech
+Emails are sent by the mailer job, so they arrive **within about 10–15 minutes**, not instantly.
 
-Next.js 16 (App Router, server actions), TypeScript, PostgreSQL with Prisma, and Nodemailer for SMTP. There are no client-side frameworks beyond React and no CSS framework.
+## How it works
 
 ```
-src/app/page.tsx              shared dashboard
-src/app/w/[token]/            worker personal page (+ actions)
-src/app/admin/                manager panel (+ actions.ts with all mutations)
-src/app/api/cron/route.ts     weekly report + due reminders (called hourly)
-src/lib/notify.ts             builds and sends emails
-src/lib/email-templates.ts    Hebrew RTL email HTML
-src/lib/schedule.ts           "is the weekly report due?" logic (unit-tested)
-prisma/schema.prisma          data model
+GitHub Pages: React app (Vite, HashRouter)  ──Firebase SDK──▶  Firestore + Firebase Auth
+   manager: signs in (#/admin)                                   ▲
+   worker:  personal link (#/w/<token>)                          │ Admin SDK
+GitHub Actions "mailer" (every 10 min) ──────────────────────────┘ ──SMTP──▶ Brevo ──▶ inboxes
 ```
 
-## Run locally
+There is no server, so **`firestore.rules` is the security layer**:
 
-Requires Node 20+ and PostgreSQL.
+- The shared board (names, task titles, statuses, equipment, meetings) can be read by anyone with the site address.
+- Workers' **emails and personal-link tokens are private**: only the signed-in manager can read them.
+- Only managers can create or edit tasks, projects and workers. A manager is a Firebase Auth user listed in the `ADMIN_EMAILS` secret; the mailer keeps the `admins` collection in sync with it.
+- A worker's change (status, equipment or meeting request) is accepted only when it is sent together with a fresh "proof" containing that worker's secret token. The rules check it, and the proof can't be read back, so tokens never become public. A worker can change only the status and comment of their own tasks.
+- The app queues emails in an `outbox` collection; the mailer sends them with the service-account key, which lives only in GitHub secrets.
+
+`tests/rules/` checks these rules on the Firestore emulator. It covers what must be allowed and what must be blocked: other workers' tasks, fake or replayed tokens, edits beyond the status, reading private data, and making yourself an admin.
+
+## Project layout
+
+```
+src/pages/            Dashboard, WorkerPage, Login, admin/* (overview, tasks, projects, workers, equipment, meetings, reports)
+src/lib/actions.ts    manager writes (Firestore batches; queue outbox emails)
+src/lib/workerActions.ts  worker writes with the token "proof"
+src/lib/email-templates.ts, report.ts, schedule.ts, dates.ts, labels.ts   shared with the mailer
+scripts/mailer.ts     the email job (GitHub Actions)
+scripts/seed-emulator.ts  demo data for local development
+firestore.rules       security rules (deployed by the deploy workflow)
+.github/workflows/    deploy (Pages + rules), mailer (every 10 min), ci
+```
+
+## Run locally (no Firebase account needed)
+
+Requires Node 20+ and Java 11+ (for the Firebase emulators).
 
 ```bash
 npm install
-cp .env.example .env          # fill DATABASE_URL, ADMIN_PASSWORD, SESSION_SECRET
-npx prisma migrate dev        # create tables
-npm run db:seed               # optional demo data (wipes the DB!)
-npm run dev                   # http://localhost:3000
+npm run emulators          # terminal 1: local Firestore + Auth
+npm run seed               # terminal 2: demo data; prints workers' personal links
+npm run mailer:emulator    # grants manager access to manager@example.com, "sends" queued emails (printed)
+npm run dev:emulator       # http://localhost:5173 (manager: manager@example.com / manager123)
 ```
 
-Without `SMTP_HOST`, emails are printed to the server console and marked "not sent" in the email log.
+Checks: `npm run typecheck`, `npm test` (unit), `npm run test:rules` (security rules on the emulator), `npm run build`.
 
-Checks: `npm run typecheck` and `npm test`.
+## Deploy
 
-## Database (Neon Postgres)
-
-| | |
-|---|---|
-| Organization | Technoda - science program (`org-lingering-haze-56034745`) |
-| Project | `task-manager` (`purple-grass-53608385`) |
-| Region | `aws-eu-central-1` (Frankfurt). Neon has no Israel region, and Frankfurt is the closest one. |
-| Postgres | 17 |
-| Branch / DB / role | `main` / `neondb` / `neondb_owner` |
-
-The app uses the pooled `DATABASE_URL`, and migrations use the direct `DATABASE_URL_UNPOOLED`. Both are in `.env.example` with the password left out. Never commit `.env`.
-
-## Deploy to the cloud (free tier is enough for 30 workers)
-
-1. **Database:** already created (see above). In Vercel, set `DATABASE_URL` and `DATABASE_URL_UNPOOLED` to the two Neon connection strings, with the real password filled in.
-2. **Email:** pick an SMTP provider. [Brevo](https://brevo.com) is free for 300 emails a day. Gmail also works with an App Password. Verify your sender address or domain with the provider so emails don't land in spam.
-3. **Hosting:** import this GitHub repo into [Vercel](https://vercel.com). Add the environment variables from `.env.example`. Set `APP_URL` to the Vercel address, and set `SESSION_SECRET` and `CRON_SECRET` to long random strings. Each deploy runs the database migrations automatically.
-4. **Scheduler (weekly report and reminders):**
-   - `vercel.json` already calls `/api/cron` once a day. That is enough for due-date reminders.
-   - To send the weekly report at the **exact hour** the manager chose, also enable the included GitHub Action (`.github/workflows/cron.yml`). It runs every hour: in GitHub, open Settings → Secrets → Actions and add `APP_URL` and `CRON_SECRET`.
-   - Any other cron service (for example cron-job.org) works too: `GET $APP_URL/api/cron` with the header `Authorization: Bearer $CRON_SECRET`. Calling it more often is harmless, because each job runs at most once per slot.
-5. Open `/login`, then:
-   - Add teams and workers.
-   - Set your name and email under **דוחות והגדרות** (reports and settings).
-   - Press **שליחת מייל בדיקה** (send test email) to confirm email works.
-
-Other hosts that run Node.js (Render, Railway, Fly.io, a VPS) work too: `npm run build && npm start`.
-
-## Security notes
-
-- A worker's personal link works like a password. Anyone who has it can update that worker's tasks. If a link leaks, use **קישור חדש** (new link) on the Workers page; the old link stops working right away.
-- The dashboard is public by default (it is not indexed by search engines). Set `DASHBOARD_PRIVATE=true` to show it only through links from emails, or to a logged-in manager.
-- Every manager action checks the signed admin cookie on the server.
+Follow **[docs/SETUP.md](docs/SETUP.md)**. In short: create a Firebase project (free), add its web config as GitHub variables and a service-account key plus SMTP settings as GitHub secrets, turn on Pages, and merge to `main`. The site is published at `https://<user>.github.io/<repo>/`.

@@ -206,3 +206,15 @@ Each phase ends with something usable that can be deployed.
 7. **Dashboard visibility:** can everyone see every team, or only their own?
 8. **Language and direction:** English only, or another language as well (for example Hebrew or Arabic, which need right-to-left layout)?
 9. **Digest timing:** daily, weekly, or user-selectable? What time zone?
+
+---
+
+## Update 2026-11-15: moved to GitHub Pages + Firebase
+
+The app no longer uses Next.js, Prisma, Neon or Vercel. It is now:
+
+- a static **React (Vite) site on GitHub Pages**;
+- **Firestore** for the data, protected by `firestore.rules`, and **Firebase Auth** for the manager, on the free Spark plan;
+- a **GitHub Actions mailer** that runs every 10 minutes and sends the emails through SMTP (Brevo).
+
+Same features and Hebrew RTL UI. Workers still use a secret personal link with no login. Emails now arrive within about 10–15 minutes instead of instantly. The shared board can be read by anyone with the site address, while workers' emails and personal links stay private. See `README.md` and `docs/SETUP.md`.
