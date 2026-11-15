@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router";
 import { byId, useCollection } from "@/lib/data";
+import { ACTIVE_EQUIPMENT, ACTIVE_MEETINGS, OPEN_TASKS, weekAgo } from "@/lib/queries";
 import { dateKey, formatDate, todayLocal } from "@/lib/dates";
 import { EQUIPMENT_STATUS, MEETING_STATUS, TASK_STATUS } from "@/lib/labels";
 import type { EquipmentRequest, MeetingRequest, Project, Task, Team, Worker } from "@/lib/types";
@@ -14,10 +15,11 @@ export function Dashboard() {
 
   const teams = useCollection<Team>("teams");
   const workers = useCollection<Worker>("workers");
-  const tasks = useCollection<Task>("tasks");
+  const tasks = useCollection<Task>("tasks", OPEN_TASKS);
+  const recentDone = useCollection<Task>("tasks", { where: ["completedAt", ">=", weekAgo()] });
   const projects = useCollection<Project>("projects");
-  const equipment = useCollection<EquipmentRequest>("equipment");
-  const meetings = useCollection<MeetingRequest>("meetings");
+  const equipment = useCollection<EquipmentRequest>("equipment", ACTIVE_EQUIPMENT);
+  const meetings = useCollection<MeetingRequest>("meetings", ACTIVE_MEETINGS);
 
   const today = todayLocal();
   const projectMap = byId(projects.data);
@@ -36,8 +38,7 @@ export function Dashboard() {
   const allTasks = activeWorkers.flatMap((w) => tasksOf(w.id));
   const overdue = allTasks.filter((t) => t.dueDate && t.dueDate < today).length;
   const unassigned = teamId ? 0 : openTasks.filter((t) => !t.assigneeId).length;
-  const weekAgo = Date.now() - 7 * 864e5;
-  const doneThisWeek = tasks.data.filter((t) => t.status === "DONE" && (t.completedAt ?? 0) >= weekAgo && inTeam(t.assigneeId)).length;
+  const doneThisWeek = recentDone.data.filter((t) => t.status === "DONE" && inTeam(t.assigneeId)).length;
 
   const toOrder = equipment.data
     .filter((e) => e.status === "APPROVED" && inTeam(e.requesterId))

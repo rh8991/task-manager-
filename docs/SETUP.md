@@ -73,12 +73,34 @@ Watch progress under the repo's **Actions** tab; each run should show a green ti
 ## 9. First use
 1. Open the site, then **ניהול** (manage), and sign in with the manager account.
    - If it says **"אין הרשאת מנהל"** (no manager access), wait up to 10 minutes, or open **Actions → mailer → Run workflow**, then refresh the page.
-2. **עובדים וצוותים** (workers and teams): add your teams, then your workers with their emails.
+2. **עובדים וצוותים** (workers and teams): add your workers. For all 30 at once, use **"+ הוספת כמה עובדים יחד"** (add several workers; see "How to check it's working" below).
 3. **דוחות והגדרות** (reports and settings): enter your name and email, save, then press **שליחת מייל בדיקה** (send test email). It arrives within about 10–15 minutes. To send it right away, use **Actions → mailer → Run workflow**.
 4. Choose whether to turn on the weekly report, and pick the day and hour.
 5. Create tasks. Each worker gets an email with their personal link.
 
 ---
+
+## How to check it's working (30 workers)
+There's **no limit on the number of workers**: 30 is fine, and so is more. Tested with 33 workers, about 100 tasks, and a report sent to all 33.
+
+**Adding your 30 workers:** on **עובדים וצוותים** (workers and teams), open **"+ הוספת כמה עובדים יחד"** (add several workers) and paste one line per worker: `name, email, team`. You can also paste three columns straight from Excel or Google Sheets. If any line has a problem (missing name, invalid email, email already in the system), nothing is saved, the bad lines are listed, and your text stays so you can fix it.
+
+**After going live, check these:**
+1. **Workers page:** the header shows **"עובדים (30 פעילים)"** (30 active), and each worker has a personal link.
+2. **Shared board:** one card per worker (30 cards).
+3. **Send a report:** on **דוחות והגדרות** (reports and settings), click **שליחת דוח** (send report). Within about 10–15 minutes, the **email log** at the bottom of that page shows one **"דוח"** (report) line per worker, 30 in total, each marked **"נשלח"** (sent).
+4. **GitHub → Actions → mailer:** open the latest run. The log shows `report: 30/30 sent`, and quiet runs show `nothing to do (4 reads)`.
+5. **Brevo → Transactional → Logs:** every email shows as delivered. Daily limit on the free plan: 300 emails.
+6. **Be a worker for a minute:** open one worker's personal link (the **פתיחה** (open) button on the Workers page), change a task's status, and check that you get the notice email.
+7. **Firebase console → Firestore → Usage:** reads per day should stay far below the free limit of **50,000**.
+
+**Expected free-plan usage with 30 workers** (measured on test data):
+- one board page load: about 150 reads;
+- one worker page load: about 20 reads;
+- a quiet mailer run: 4 reads (about 600 a day);
+- a report to everyone: about 180 reads.
+
+A busy day comes to roughly 10,000 reads, about 20% of the free limit. Pages load only open tasks and active requests, so the cost doesn't grow as finished work piles up. Emails: 30 report emails plus notifications are well within Brevo's 300 a day.
 
 ## Good to know
 - **Email timing:** emails go out within about 10–15 minutes. GitHub sometimes starts scheduled runs late at busy times.

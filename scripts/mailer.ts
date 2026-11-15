@@ -100,13 +100,18 @@ async function sendMany(emails: Email[]) {
 
 // ---------------------------------------------------------------- data
 
-async function all<T>(col: string): Promise<WithId<T>[]> {
-  const snap = await db.collection(col).get();
+/** Documents read this run (Firestore's free plan allows 50,000 reads a day). */
+let reads = 0;
+
+async function all<T>(q: FirebaseFirestore.Query): Promise<WithId<T>[]> {
+  const snap = await q.get();
+  reads += Math.max(1, snap.size); // an empty query still counts as one read
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as T) }));
 }
 
 async function loadSettings(): Promise<Settings> {
   const snap = await db.doc("settings/main").get();
+  reads += 1;
   return { ...DEFAULT_SETTINGS, ...((snap.data() as Partial<Settings>) ?? {}) };
 }
 
@@ -121,17 +126,25 @@ type Data = {
   meetings: WithId<MeetingRequest>[];
 };
 
-async function loadData(): Promise<Data> {
-  const [settings, workers, priv, tasks, projects, teams, equipment, meetings] = await Promise.all([
-    loadSettings(),
-    all<Worker>("workers"),
-    all<WorkerPrivate>("workerPrivate"),
-    all<Task>("tasks"),
-    all<Project>("projects"),
-    all<Team>("teams"),
-    all<EquipmentRequest>("equipment"),
-    all<MeetingRequest>("meetings"),
+/**
+ * Loads what emails need: all workers, teams and projects (small), but only OPEN tasks plus
+ * tasks finished since the last report, and only active equipment and meetings. Old, closed
+ * items pile up over time and are never needed here.
+ */
+async function loadData(settings: Settings): Promise<Data> {
+  const since = settings.lastReportAt ?? Date.now() - 7 * 864e5;
+  const c = (name: string) => db.collection(name);
+  const [workers, priv, openTasks, doneTasks, projects, teams, equipment, meetings] = await Promise.all([
+    all<Worker>(c("workers")),
+    all<WorkerPrivate>(c("workerPrivate")),
+    all<Task>(c("tasks").where("status", "!=", "DONE")),
+    all<Task>(c("tasks").where("completedAt", ">", since)),
+    all<Project>(c("projects")),
+    all<Team>(c("teams")),
+    all<EquipmentRequest>(c("equipment").where("status", "in", ["PENDING", "APPROVED", "ORDERED"])),
+    all<MeetingRequest>(c("meetings").where("status", "in", ["OPEN", "SCHEDULED"])),
   ]);
+  const tasks = [...new Map([...openTasks, ...doneTasks.filter((t) => t.status === "DONE")].map((t) => [t.id, t])).values()];
   const map = <T extends { id: string }>(l: T[]) => new Map(l.map((x) => [x.id, x]));
   return { settings, workers: map(workers), priv: map(priv), tasks, projects: map(projects), teams: map(teams), equipment, meetings };
 }
@@ -168,6 +181,7 @@ async function syncAdmins() {
     }
   }
   const current = await db.collection("admins").get();
+  reads += Math.max(1, current.size);
   const batch = db.batch();
   current.docs.forEach((doc) => !wanted.has(doc.id) && batch.delete(doc.ref));
   wanted.forEach((email, uid) => batch.set(db.doc(`admins/${uid}`), { email }));
@@ -258,9 +272,8 @@ async function claim(ref: DocumentReference): Promise<OutboxDoc | null> {
   });
 }
 
-async function processOutbox(d: Data) {
-  const pending = await db.collection("outbox").where("status", "==", "pending").get();
-  const docs = pending.docs.sort((a, b) => (a.get("createdAt") ?? 0) - (b.get("createdAt") ?? 0));
+async function processOutbox(d: Data, pending: FirebaseFirestore.QuerySnapshot) {
+  const docs = [...pending.docs].sort((a, b) => (a.get("createdAt") ?? 0) - (b.get("createdAt") ?? 0));
   for (const doc of docs) {
     const item = await claim(doc.ref);
     if (!item) continue;
@@ -274,8 +287,12 @@ async function processOutbox(d: Data) {
     console.log(`outbox ${item.type}: ${result}`);
     if (item.type === "report") d.settings = await loadSettings();
   }
-  // Items stuck in "sending" (a run that crashed) are marked failed rather than risk a double send.
+}
+
+/** Items stuck in "sending" (a run that crashed) are marked failed rather than risk a double send. */
+async function failStuck() {
   const stuck = await db.collection("outbox").where("status", "==", "sending").get();
+  reads += Math.max(1, stuck.size);
   for (const s of stuck.docs) {
     if (Date.now() - (s.get("processedAt") ?? 0) > 30 * 60_000) await s.ref.update({ status: "failed", result: "interrupted" });
   }
@@ -340,14 +357,39 @@ async function dueReminders(d: Data, now: Date) {
 async function main() {
   const now = new Date();
   await syncAdmins();
-  const d = await loadData();
-  await processOutbox(d);
-  await weeklyReport(d, now);
-  await dueReminders(d, now);
-  transporter?.close();
+
+  // Cheap checks first: most runs have nothing to do and should cost only a few reads.
+  const settings = await loadSettings();
+  const pending = await db.collection("outbox").where("status", "==", "pending").get();
+  reads += Math.max(1, pending.size);
+  const weeklyDue = isWeeklyReportDue(
+    {
+      reportEnabled: settings.reportEnabled,
+      reportDay: settings.reportDay,
+      reportHour: settings.reportHour,
+      scheduleUpdatedAt: new Date(settings.scheduleUpdatedAt),
+      lastReportAt: settings.lastReportAt ? new Date(settings.lastReportAt) : null,
+    },
+    now,
+  );
+  const remindersDue = areRemindersDue(settings, now);
+  await failStuck();
+
+  if (pending.empty && !weeklyDue && !remindersDue) {
+    console.log(`nothing to do (${reads} reads)`);
+    return;
+  }
+
+  const d = await loadData(settings);
+  if (!pending.empty) await processOutbox(d, pending);
+  if (weeklyDue) await weeklyReport(d, now);
+  if (remindersDue) await dueReminders(d, now);
+  console.log(`done (${reads} reads)`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .then(() => transporter?.close())
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

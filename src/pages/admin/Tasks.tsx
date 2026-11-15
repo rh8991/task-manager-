@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router";
 import { byId, useCollection } from "@/lib/data";
+import { OPEN_TASKS } from "@/lib/queries";
 import { formatDate, todayLocal } from "@/lib/dates";
 import { PRIORITY, TASK_STATUS } from "@/lib/labels";
 import { createTask, setTaskStatus } from "@/lib/actions";
@@ -13,7 +14,6 @@ export function TasksPage() {
   const act = useAct();
   const [sp, setSp] = useSearchParams();
   const today = todayLocal();
-  const tasks = useCollection<Task>("tasks");
   const workers = useCollection<Worker>("workers");
   const projects = useCollection<Project>("projects");
   const workerMap = byId(workers.data);
@@ -22,6 +22,9 @@ export function TasksPage() {
   const activeProjects = projects.data.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, "he"));
 
   const status = sp.get("status") ?? "open";
+  // Finished tasks pile up over time: load them only when the filter asks for them.
+  const needsDone = status === "all" || status === "DONE";
+  const tasks = useCollection<Task>("tasks", needsDone ? (status === "DONE" ? { where: ["status", "==", "DONE"] } : {}) : OPEN_TASKS);
   const assignee = sp.get("assignee") ?? "";
   const project = sp.get("project") ?? "";
   const q = (sp.get("q") ?? "").toLowerCase();

@@ -23,8 +23,9 @@ import { DEFAULT_SETTINGS, type Settings, type WithId } from "./types";
  */
 export type Live<T> = { data: T; loading: boolean; error: string | null };
 
+export type Clause = [field: string, op: WhereFilterOp, value: unknown];
 export type QueryOpts = {
-  where?: [field: string, op: WhereFilterOp, value: unknown];
+  where?: Clause | Clause[];
   orderBy?: [field: string, dir: "asc" | "desc"];
   limit?: number;
 };
@@ -35,7 +36,8 @@ export function useCollection<T = DocumentData>(path: string | null, opts: Query
   useEffect(() => {
     if (!path) return setState({ data: [], loading: false, error: null });
     const c: QueryConstraint[] = [];
-    if (opts.where) c.push(where(...opts.where));
+    const clauses = !opts.where ? [] : Array.isArray(opts.where[0]) ? (opts.where as Clause[]) : [opts.where as Clause];
+    for (const w of clauses) c.push(where(...w));
     if (opts.orderBy) c.push(orderBy(...opts.orderBy));
     if (opts.limit) c.push(limit(opts.limit));
     return onSnapshot(

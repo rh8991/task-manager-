@@ -33,7 +33,9 @@ export function EquipmentPage() {
   const act = useAct();
   const [sp] = useSearchParams();
   const filter = FILTERS.find((x) => x.key === (sp.get("f") ?? "active")) ?? FILTERS[0];
-  const equipment = useCollection<EquipmentRequest>("equipment");
+  // Only the statuses this tab shows; the stats row needs the open ones, so "closed" adds them.
+  const statuses = filter.key === "closed" ? [...filter.statuses, "PENDING", "APPROVED", "ORDERED"] : ["PENDING", "APPROVED", "ORDERED"];
+  const equipment = useCollection<EquipmentRequest>("equipment", { where: ["status", "in", statuses] });
   const workers = useCollection<Worker>("workers");
   const projects = useCollection<Project>("projects");
   const workerMap = byId(workers.data);

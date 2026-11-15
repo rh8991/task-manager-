@@ -82,6 +82,34 @@ export async function createWorker(input: { name: string; email: string; teamId:
   await b.commit();
 }
 
+/**
+ * Adds many workers in one batch (all or nothing). Teams are matched by name; missing teams are
+ * created. Rows must already be validated with parseWorkerLines().
+ */
+export async function createWorkers(rows: { name: string; email: string; team: string | null }[], teams: { id: string; name: string }[]) {
+  if (rows.length > 150) fail("אפשר להוסיף עד 150 עובדים בכל פעם");
+  const teamIds = new Map(teams.map((t) => [t.name.trim(), t.id]));
+  const b = writeBatch(db);
+  for (const r of rows) {
+    let teamId: string | null = null;
+    if (r.team) {
+      teamId = teamIds.get(r.team) ?? null;
+      if (!teamId) {
+        const ref = newRef("teams");
+        b.set(ref, { name: r.team, createdAt: now() });
+        teamIds.set(r.team, ref.id);
+        teamId = ref.id;
+      }
+    }
+    const ref = newRef("workers");
+    const token = newToken();
+    b.set(ref, { name: r.name, teamId, active: true, createdAt: now() });
+    b.set(doc(db, "workerPrivate", ref.id), { email: r.email, token } satisfies WorkerPrivate);
+    b.set(doc(db, "workerLinks", token), { workerId: ref.id });
+  }
+  await b.commit();
+}
+
 export async function updateWorker(id: string, input: { name: string; email: string; teamId: string | null; active: boolean }) {
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();

@@ -1,6 +1,6 @@
 # Task Manager (ניהול משימות)
 
-A Hebrew, right-to-left task manager for a team of about 30 workers and a manager. It runs entirely on **free services**:
+A Hebrew, right-to-left task manager for a team of workers (tested with 30+; there is no limit) and a manager. It runs entirely on **free services**:
 
 - **GitHub Pages** hosts the website (static files).
 - **Firebase** (free Spark plan) stores the data in **Firestore** and handles the manager's sign-in (**Firebase Auth**).
@@ -16,6 +16,7 @@ Workers **don't log in**. Each one has a private personal link, included in ever
 | **Notifications** | Email to the worker when they get a task (or one is moved to them), and a reminder the day before a task is due. Optional emails to the manager when a worker updates a task or asks for equipment or a meeting. |
 | **Email report** | Each worker gets their own report: open tasks grouped as overdue / today / this week / later, plus their equipment and meeting requests. The manager sends it on demand (to everyone or selected workers, with an optional note), or it goes out **weekly** at a day and hour the manager picks. |
 | **Shared board** | Who is working on what, overdue and blocked counts, equipment to order, and meetings needed between teams. It updates live, can be filtered by team, and has a TV mode. |
+| **Workers** | Add one at a time, or paste a whole list (`name, email, team` per line, or columns from a spreadsheet). Each worker gets a private personal link. |
 | **Equipment** | A worker asks for an item, and the manager approves or rejects it, then marks it ordered and received. "Approved" is the list of items still to order, with an estimated total cost. |
 | **Meetings** | Records that a meeting is needed, with which team and by when. Booking happens outside the system. |
 

@@ -18,7 +18,7 @@ export function MeetingsPage() {
   const act = useAct();
   const [sp] = useSearchParams();
   const filter = FILTERS.find((x) => x.key === (sp.get("f") ?? "open")) ?? FILTERS[0];
-  const meetings = useCollection<MeetingRequest>("meetings");
+  const meetings = useCollection<MeetingRequest>("meetings", { where: ["status", "in", filter.statuses] });
   const teams = useCollection<Team>("teams");
   const workers = useCollection<Worker>("workers");
   const teamMap = byId(teams.data);

@@ -36,7 +36,13 @@ export function WorkerPage() {
 function WorkerHome({ token, workerId, worker }: { token: string; workerId: string; worker: Worker }) {
   const act = useAct();
   const who = { token, workerId, workerName: worker.name };
-  const tasks = useCollection<Task>("tasks", { where: ["assigneeId", "==", workerId] });
+  const tasks = useCollection<Task>("tasks", { where: [["assigneeId", "==", workerId], ["status", "in", ["TODO", "IN_PROGRESS", "BLOCKED"]]] });
+  // Needs the composite index in firestore.indexes.json; if it's missing the list is just hidden.
+  const done = useCollection<Task>("tasks", {
+    where: [["assigneeId", "==", workerId], ["status", "==", "DONE"]],
+    orderBy: ["completedAt", "desc"],
+    limit: 5,
+  });
   const equipment = useCollection<EquipmentRequest>("equipment", { where: ["requesterId", "==", workerId] });
   const meetings = useCollection<MeetingRequest>("meetings", { where: ["requesterId", "==", workerId] });
   const teams = useCollection<Team>("teams");
@@ -46,10 +52,7 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
 
   const open = tasks.data.filter((t) => t.status !== "DONE");
   const taskMap = byId(open);
-  const recentDone = tasks.data
-    .filter((t) => t.status === "DONE")
-    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
-    .slice(0, 5);
+  const recentDone = done.data;
   const groups = groupTasks(
     open.map<ReportTask>((t) => ({
       id: t.id,

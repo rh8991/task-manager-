@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { byId, useCollection } from "@/lib/data";
+import { OPEN_TASKS } from "@/lib/queries";
 import { formatDate, todayLocal } from "@/lib/dates";
 import { EQUIPMENT_STATUS, MEETING_STATUS, TASK_STATUS } from "@/lib/labels";
 import { setEquipmentStatus } from "@/lib/actions";
@@ -10,11 +11,11 @@ import { useAct } from "@/components/Flash";
 export function Overview() {
   const act = useAct();
   const today = todayLocal();
-  const tasks = useCollection<Task>("tasks");
+  const tasks = useCollection<Task>("tasks", OPEN_TASKS);
   const workers = useCollection<Worker>("workers");
   const teams = useCollection<Team>("teams");
-  const equipment = useCollection<EquipmentRequest>("equipment");
-  const meetings = useCollection<MeetingRequest>("meetings");
+  const equipment = useCollection<EquipmentRequest>("equipment", { where: ["status", "in", ["PENDING", "APPROVED"]] });
+  const meetings = useCollection<MeetingRequest>("meetings", { where: ["status", "==", "OPEN"] });
   const updates = useCollection<TaskUpdate>("taskUpdates", { orderBy: ["createdAt", "desc"], limit: 10 });
   const workerMap = byId(workers.data);
   const teamMap = byId(teams.data);

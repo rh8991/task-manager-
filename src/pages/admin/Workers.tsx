@@ -1,8 +1,11 @@
 import { byId, useCollection } from "@/lib/data";
-import { UserError, createTeam, createWorker, deleteTeam, deleteWorker, regenerateWorkerLink, updateWorker } from "@/lib/actions";
+import { OPEN_TASKS } from "@/lib/queries";
+import { UserError, createTeam, createWorker, createWorkers, deleteTeam, deleteWorker, regenerateWorkerLink, updateWorker } from "@/lib/actions";
 import type { Task, Team, Worker, WorkerPrivate } from "@/lib/types";
+import { useState, type FormEvent } from "react";
 import { checked, optStr, str } from "@/lib/formdata";
-import { useAct } from "@/components/Flash";
+import { parseWorkerLines } from "@/lib/bulk";
+import { errorText, useAct, useFlash } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
 import { CopyButton } from "@/components/CopyButton";
 
@@ -16,7 +19,7 @@ export function WorkersPage() {
   const workers = useCollection<Worker>("workers");
   const privates = useCollection<WorkerPrivate>("workerPrivate");
   const teams = useCollection<Team>("teams");
-  const tasks = useCollection<Task>("tasks");
+  const tasks = useCollection<Task>("tasks", OPEN_TASKS);
   const privMap = byId(privates.data);
   const teamMap = byId(teams.data);
   const sortedTeams = [...teams.data].sort((a, b) => a.name.localeCompare(b.name, "he"));
@@ -103,6 +106,8 @@ export function WorkersPage() {
         </section>
       </div>
 
+      <BulkAdd existingEmails={privates.data.map((p) => p.email)} teams={teams.data} />
+
       <section className="card">
         <h2>עובדים ({workers.data.filter((w) => w.active).length} פעילים)</h2>
         <p className="muted small" style={{ marginTop: 0 }}>
@@ -158,5 +163,57 @@ export function WorkersPage() {
         )}
       </section>
     </>
+  );
+}
+
+/** Paste many workers at once. A plain submit handler so the text stays if something is wrong. */
+function BulkAdd({ existingEmails, teams }: { existingEmails: string[]; teams: { id: string; name: string }[] }) {
+  const { show } = useFlash();
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const { rows, errors } = parseWorkerLines(str(new FormData(form), "lines"), existingEmails);
+    setErrors(errors);
+    if (errors.length) return show(`לא נשמר דבר – יש לתקן ${errors.length === 1 ? "שורה אחת" : `${errors.length} שורות`} (מפורט למטה)`, true);
+    setBusy(true);
+    try {
+      await createWorkers(rows, teams);
+      form.reset();
+      show(`נוספו ${rows.length} עובדים`);
+    } catch (err) {
+      show(errorText(err), true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="card">
+      <summary>+ הוספת כמה עובדים יחד</summary>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        שורה לכל עובד/ת: <strong>שם, מייל, צוות</strong> (הצוות לא חובה; צוות שלא קיים ייווצר). אפשר גם להדביק עמודות מאקסל או Google Sheets.
+      </p>
+      <form onSubmit={submit} className="stack">
+        <textarea
+          name="lines"
+          dir="auto"
+          rows={8}
+          required
+          placeholder={"דנה כהן, dana@example.com, פיתוח\nיוסי לוי, yossi@gmail.com, תפעול\nמיכל אברהם, michal@walla.co.il"}
+        />
+        {errors.length > 0 && (
+          <ul className="danger-text small" style={{ margin: 0 }}>
+            {errors.map((e) => <li key={e}>{e}</li>)}
+          </ul>
+        )}
+        <div className="row">
+          <button type="submit" className="btn" disabled={busy}>{busy ? "…" : "הוספת כל העובדים"}</button>
+          <span className="muted small">אם יש שורה עם שגיאה, שום דבר לא נשמר – הטקסט נשאר כדי לתקן.</span>
+        </div>
+      </form>
+    </details>
   );
 }
