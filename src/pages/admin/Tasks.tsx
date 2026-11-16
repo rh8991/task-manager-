@@ -6,7 +6,7 @@ import { OPEN_TASKS } from "@/lib/queries";
 import { formatDate, todayLocal } from "@/lib/dates";
 import { PRIORITY, TASK_STATUS } from "@/lib/labels";
 import { createTask, setTaskStatus } from "@/lib/actions";
-import { PRIORITIES, TASK_STATUSES, type Project, type Task, type Worker } from "@/lib/types";
+import { PRIORITIES, TASK_STATUSES, type Lesson, type Project, type Task, type Team, type Worker } from "@/lib/types";
 import { oneOf, optDate, optStr, str } from "@/lib/formdata";
 import { Badge, Options } from "@/components/ui";
 import { useAct } from "@/components/Flash";
@@ -21,8 +21,13 @@ export function TasksPage() {
   const today = todayLocal();
   const workers = useCollection<Worker>("workers");
   const projects = useCollection<Project>("projects");
+  const teams = useCollection<Team>("teams");
+  const lessons = useCollection<Lesson>("lessons");
   const workerMap = byId(workers.data);
   const projectMap = byId(projects.data);
+  const teamMap = byId(teams.data);
+  const lessonMap = byId(lessons.data);
+  const openLessons = lessons.data.filter((l) => l.status !== "ARCHIVED").sort((a, b) => a.title.localeCompare(b.title, "he"));
   const activeWorkers = workers.data.filter((w) => w.active).sort((a, b) => a.name.localeCompare(b.name, "he"));
   const activeProjects = projects.data.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, "he"));
 
@@ -32,12 +37,16 @@ export function TasksPage() {
   const tasks = useCollection<Task>("tasks", needsDone ? (status === "DONE" ? { where: ["status", "==", "DONE"] } : {}) : OPEN_TASKS);
   const assignee = sp.get("assignee") ?? "";
   const project = sp.get("project") ?? "";
+  const team = sp.get("team") ?? "";
+  const lesson = sp.get("lesson") ?? "";
   const q = (sp.get("q") ?? "").toLowerCase();
 
   const list = tasks.data
     .filter((t) => (status === "open" ? t.status !== "DONE" : status === "all" ? true : t.status === status))
     .filter((t) => (assignee === "none" ? !t.assigneeId : assignee ? t.assigneeId === assignee : true))
     .filter((t) => (project ? t.projectId === project : true))
+    .filter((t) => (team ? t.teamId === team : true))
+    .filter((t) => (lesson === "none" ? !t.lessonId : lesson ? t.lessonId === lesson : true))
     .filter((t) => (q ? t.title.toLowerCase().includes(q) : true))
     .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") || b.createdAt - a.createdAt);
 
@@ -50,6 +59,8 @@ export function TasksPage() {
       dueDate: optDate(fd, "dueDate"),
       projectId: optStr(fd, "projectId"),
       assigneeId,
+      teamId: optStr(fd, "teamId"),
+      lessonId: optStr(fd, "lessonId"),
       reviews: parseReviewField(fd.get("reviews")),
     });
     setEditorKey((k) => k + 1);
@@ -61,7 +72,7 @@ export function TasksPage() {
     if (t && s) await setTaskStatus(t.id, s, t.status);
   }, "הסטטוס עודכן");
 
-  const filtered = !!(sp.get("q") || sp.get("assignee") || sp.get("project") || sp.get("status"));
+  const filtered = !!(sp.get("q") || sp.get("assignee") || sp.get("project") || sp.get("status") || team || lesson);
 
   return (
     <>
@@ -87,6 +98,20 @@ export function TasksPage() {
                 {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
+            <label>
+              מחלקה
+              <select name="teamId" defaultValue="">
+                <option value="">— ללא —</option>
+                {teams.data.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label>
+              מערך
+              <select name="lessonId" defaultValue="">
+                <option value="">— משימה כללית —</option>
+                {openLessons.map((l) => <option key={l.id} value={l.id}>{l.title}</option>)}
+              </select>
+            </label>
             <label>תאריך יעד<input type="date" name="dueDate" min={today} /></label>
             <label>
               עדיפות
@@ -107,7 +132,7 @@ export function TasksPage() {
           e.preventDefault();
           const fd = new FormData(e.currentTarget);
           const next = new URLSearchParams();
-          for (const k of ["q", "status", "assignee", "project"]) {
+          for (const k of ["q", "status", "assignee", "project", "team", "lesson"]) {
             const v = str(fd, k);
             if (v) next.set(k, v);
           }
@@ -129,6 +154,15 @@ export function TasksPage() {
           <option value="">כל הפרויקטים</option>
           {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+        <select name="team" defaultValue={team} style={{ maxWidth: 160 }}>
+          <option value="">כל המחלקות</option>
+          {teams.data.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <select name="lesson" defaultValue={lesson} style={{ maxWidth: 190 }}>
+          <option value="">כל המערכים</option>
+          <option value="none">משימות כלליות (בלי מערך)</option>
+          {openLessons.map((l) => <option key={l.id} value={l.id}>{l.title}</option>)}
+        </select>
         <button className="btn secondary">סינון</button>
         {filtered && <Link to="/admin/tasks" className="small">ניקוי</Link>}
       </form>
@@ -142,15 +176,22 @@ export function TasksPage() {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>משימה</th><th>עובד/ת</th><th>פרויקט</th><th>עדיפות</th><th>יעד</th><th>סטטוס</th></tr></thead>
+              <thead><tr><th>משימה</th><th>עובד/ת / מחלקה</th><th>מערך / פרויקט</th><th>עדיפות</th><th>יעד</th><th>סטטוס</th></tr></thead>
               <tbody>
                 {list.map((t) => {
                   const late = t.status !== "DONE" && !!t.dueDate && t.dueDate < today;
                   return (
                     <tr key={t.id} className={late ? "overdue" : ""}>
                       <td><Link to={`/admin/tasks/${t.id}`}>{t.title}</Link></td>
-                      <td>{(t.assigneeId && workerMap.get(t.assigneeId)?.name) ?? <span className="muted">—</span>}</td>
-                      <td className="muted">{(t.projectId && projectMap.get(t.projectId)?.name) ?? "—"}</td>
+                      <td>
+                        {(t.assigneeId && workerMap.get(t.assigneeId)?.name) ?? (!t.teamId && <span className="muted">—</span>)}
+                        {t.teamId && <div className="muted small">{teamMap.get(t.teamId)?.name}</div>}
+                      </td>
+                      <td className="muted">
+                        {t.lessonId && lessonMap.get(t.lessonId) ? <Link to={`/admin/lessons/${t.lessonId}`}>{lessonMap.get(t.lessonId)!.title}</Link> : null}
+                        {t.projectId && <div className="small">{projectMap.get(t.projectId)?.name}</div>}
+                        {!t.lessonId && !t.projectId && "—"}
+                      </td>
                       <td><Badge value={t.priority} label={PRIORITY[t.priority]} /></td>
                       <td className={`nowrap ${late ? "danger-text" : ""}`}>{formatDate(t.dueDate) || "—"}</td>
                       <td>

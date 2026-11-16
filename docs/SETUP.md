@@ -80,6 +80,15 @@ Watch progress under the repo's **Actions** tab; each run should show a green ti
 
 ---
 
+## Science program: lessons (מערכים)
+1. On **עובדים וצוותים**, create the departments as teams: **מדריכים**, **מעבדה**, **אחזקה** (instructors, lab, maintenance), and put each worker in one.
+2. On **מערכים** (manager panel), click **+ מערך חדש**: name, subject, grades, final deadline, and the instructors working on it. They get an email.
+3. In the lesson page add the parts of the lesson, the **equipment list** (or paste it: one item per line), mark **allergens** and **hazards**, and the review dates.
+4. Instructors see the lesson on their personal page, can edit the equipment list, and **send the lesson file for review**. You get the file attached to an email within ~10–15 minutes, and approve it or return it with notes in the lesson page.
+5. The lab prints the equipment checklist from the lesson page (**רשימת ציוד להדפסה**). Before a group arrives, check allergies at **בודק אלרגיות**.
+
+Lesson files are stored in the free Firestore database (Firebase Storage needs a paid plan): up to 8 MB per file, the newest 3 versions of each lesson keep their file. 50 lessons × 3 versions × 3 MB ≈ 450 MB of the free 1 GB.
+
 ## How to check it's working (30 workers)
 There's **no limit on the number of workers**: 30 is fine, and so is more. Tested with 33 workers, about 100 tasks, and a report sent to all 33.
 

@@ -68,6 +68,7 @@ export function Dashboard() {
           <span className="brand">לוח משימות משותף</span>
           <span className="muted small" style={{ flex: 1 }}>מתעדכן בזמן אמת · {formatDate(today)}</span>
           {myToken && <Link to={`/w/${myToken}`} className="btn ghost sm">המשימות שלי</Link>}
+          <Link to={myToken ? `/lessons?w=${myToken}` : "/lessons"} className="btn ghost sm">מערכים</Link>
           {!tv && <Link to={link({ tv: "1", team: teamId })} className="btn ghost sm">מצב מסך</Link>}
           <Link to="/admin" className="btn ghost sm">ניהול</Link>
         </div>
@@ -143,6 +144,34 @@ export function Dashboard() {
               );
             })}
           </div>
+        )}
+
+        {teamId && (
+          <section className="card">
+            <h2>משימות למחלקה: {teamMap.get(teamId)?.name}</h2>
+            {(() => {
+              const deptTasks = openTasks
+                .filter((t) => t.teamId === teamId)
+                .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
+              if (!deptTasks.length) return <p className="empty">אין משימות פתוחות למחלקה</p>;
+              return (
+                <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: ".4rem" }}>
+                  {deptTasks.map((t) => (
+                    <li key={t.id} className="spread" style={{ flexWrap: "nowrap" }}>
+                      <span>
+                        <Link to={`/task/${t.id}${myToken ? `?w=${myToken}` : ""}`} className="task-link">{t.title}</Link>
+                        <span className={`small ${t.dueDate && t.dueDate < today ? "danger-text" : "muted"}`}>
+                          {t.dueDate && ` · ${formatDate(t.dueDate)}`}
+                          {t.assigneeId && ` · ${workerMap.get(t.assigneeId)?.name ?? ""}`}
+                        </span>
+                      </span>
+                      <Badge value={t.status} label={TASK_STATUS[t.status]} />
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
+          </section>
         )}
 
         <div className="grid grid-2">

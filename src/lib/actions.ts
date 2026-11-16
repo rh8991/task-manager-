@@ -32,12 +32,12 @@ import type {
  */
 
 export class UserError extends Error {}
-const fail = (msg: string): never => {
+export const fail = (msg: string): never => {
   throw new UserError(msg);
 };
 
 const now = () => Date.now();
-const newRef = (col: string) => doc(collection(db, col));
+export const newRef = (col: string) => doc(collection(db, col));
 export const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
 export function newToken(): string {
@@ -45,7 +45,7 @@ export function newToken(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function queue(batch: ReturnType<typeof writeBatch>, item: OutboxItem) {
+export function queue(batch: ReturnType<typeof writeBatch>, item: OutboxItem) {
   batch.set(newRef("outbox"), { ...item, status: "pending", createdAt: now() });
 }
 
@@ -163,6 +163,8 @@ export async function deleteProject(id: string) {
 // ---------------------------------------------------------------- tasks
 
 export type TaskInput = Pick<Task, "title" | "description" | "priority" | "dueDate" | "projectId" | "assigneeId"> & {
+  lessonId?: string | null;
+  teamId?: string | null;
   /** Review dates as edited in the form (ids kept for existing reviews). */
   reviews: ReviewRow[];
 };

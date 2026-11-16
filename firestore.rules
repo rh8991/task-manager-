@@ -40,6 +40,20 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/workers/$(workerId)).data.active == true;
     }
 
+    // A fresh proof by a worker who is one of the lesson's instructors (ownerIds).
+    function ownerProof(proofId, ownerIds) {
+      let w = getAfter(/databases/$(database)/documents/proofs/$(proofId)).data.workerId;
+      return proofId is string && w in ownerIds && freshProof(proofId, w);
+    }
+
+    function lessonOwners(lessonId) {
+      return get(/databases/$(database)/documents/lessons/$(lessonId)).data.ownerIds;
+    }
+
+    function proofWorker(proofId) {
+      return getAfter(/databases/$(database)/documents/proofs/$(proofId)).data.workerId;
+    }
+
     // ---------------------------------------------------------------- manager-only
 
     match /admins/{uid} {
@@ -166,7 +180,77 @@ service cloud.firestore {
         && request.resource.data.lines is list && request.resource.data.lines.size() <= 10
         && request.resource.data.path is string && request.resource.data.path.size() <= 200
         && freshProof(request.resource.data.proofId, getAfter(/databases/$(database)/documents/proofs/$(request.resource.data.proofId)).data.workerId)
+      ) || (
+        request.resource.data.keys().hasOnly(['type', 'lessonId', 'submissionId', 'proofId', 'status', 'createdAt'])
+        && request.resource.data.type == 'lesson-submitted'
+        && request.resource.data.status == 'pending'
+        && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
       );
+    }
+
+    // ---------------------------------------------------------------- lessons (מערכים)
+
+    // Public read. An instructor of the lesson may edit only the equipment list, the parts of the
+    // lesson and safety notes, start working on it, and submit it (status SUBMITTED, version + 1).
+    match /lessons/{lessonId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['equipment', 'activities', 'safety', 'status', 'version', 'lastSubmittedAt', 'lastProofId', 'updatedAt'])
+        && request.resource.data.status in ['IN_PROGRESS', 'SUBMITTED']
+        && (request.resource.data.status == resource.data.status
+            || resource.data.status in ['IDEA', 'IN_PROGRESS', 'CHANGES_REQUESTED'])
+        && request.resource.data.equipment is list && request.resource.data.equipment.size() <= 200
+        && request.resource.data.activities is list && request.resource.data.activities.size() <= 50
+        && request.resource.data.safety is list && request.resource.data.safety.size() <= 20
+        && (request.resource.data.version == resource.data.version
+            || (request.resource.data.version == resource.data.version + 1 && request.resource.data.status == 'SUBMITTED'))
+        && ownerProof(request.resource.data.lastProofId, resource.data.ownerIds)
+      );
+    }
+
+    // Each time a lesson file is sent for review. Public read (no file content).
+    match /lessonSubmissions/{id} {
+      allow read: if true;
+      allow update, delete: if isAdmin();
+      allow create: if isAdmin() || (
+        request.resource.data.keys().hasOnly(['lessonId', 'version', 'fileId', 'fileName', 'fileSize', 'note', 'submittedBy',
+          'submittedAt', 'emailStatus', 'emailAt', 'emailError', 'decision', 'decisionNotes', 'decidedAt', 'proofId'])
+        && request.resource.data.emailStatus == 'pending'
+        && request.resource.data.decision == null
+        && request.resource.data.decisionNotes == null
+        && request.resource.data.decidedAt == null
+        && request.resource.data.emailAt == null
+        && request.resource.data.emailError == null
+        && optString(request.resource.data.note, 2000)
+        && request.resource.data.submittedBy == proofWorker(request.resource.data.proofId)
+        && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
+      );
+    }
+
+    // Uploaded lesson files (internal teaching material): only the manager can read them.
+    // The bytes are split into chunks (Firestore documents are limited to 1 MiB).
+    match /lessonFiles/{fileId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isAdmin() || (
+        request.resource.data.keys().hasOnly(['lessonId', 'name', 'size', 'mimeType', 'chunkCount', 'uploadedBy', 'proofId', 'createdAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 200
+        && request.resource.data.size is int && request.resource.data.size > 0 && request.resource.data.size <= 8388608
+        && request.resource.data.chunkCount is int && request.resource.data.chunkCount <= 10
+        && request.resource.data.uploadedBy == proofWorker(request.resource.data.proofId)
+        && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
+      );
+
+      match /chunks/{n} {
+        allow read, update, delete: if isAdmin();
+        allow create: if isAdmin() || (
+          request.resource.data.keys().hasOnly(['data', 'n', 'lessonId', 'proofId'])
+          && request.resource.data.data is bytes && request.resource.data.data.size() <= 972800
+          && getAfter(/databases/$(database)/documents/lessonFiles/$(fileId)).data.lessonId == request.resource.data.lessonId
+          && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
+        );
+      }
     }
   }
 }

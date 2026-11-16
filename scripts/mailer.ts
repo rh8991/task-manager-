@@ -22,6 +22,11 @@ import { dueReminderEmail, managerNoticeEmail, reportEmail, taskAssignedEmail } 
 import { groupTasks, type ReportTask, type WorkerReport } from "../src/lib/report";
 import { areRemindersDue, isWeeklyReportDue } from "../src/lib/schedule";
 import { nextReview } from "../src/lib/reviews";
+import { lessonAssignedEmail, lessonDecisionEmail, lessonSubmittedEmail } from "../src/lib/lesson-emails";
+import { LESSON_STATUS, WORKING_STATUSES, isLessonLate, withLessonDefaults } from "../src/lib/lessons";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import type { Lesson, LessonFile, LessonSubmission } from "../src/lib/types";
 import {
   DEFAULT_SETTINGS,
   type EquipmentRequest,
@@ -62,10 +67,16 @@ const adminUrl = (path: string) => `${APP_URL}#${path.startsWith("/") ? path : `
 
 // ---------------------------------------------------------------- email
 
-type Email = { to: string; subject: string; html: string; text: string; kind: string };
+type Attachment = { filename: string; content: Buffer; contentType: string };
+type Email = { to: string; subject: string; html: string; text: string; kind: string; attachments?: Attachment[] };
 
+// EMAIL_OUT_DIR (testing): write each email as an .eml file instead of sending it.
+const OUT_DIR = env.EMAIL_OUT_DIR || "";
 let transporter: Transporter | null = null;
-if (env.SMTP_HOST) {
+if (OUT_DIR) {
+  mkdirSync(OUT_DIR, { recursive: true });
+  transporter = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "unix" });
+} else if (env.SMTP_HOST) {
   const port = Number(env.SMTP_PORT || 587);
   transporter = nodemailer.createTransport({
     host: env.SMTP_HOST,
@@ -87,7 +98,14 @@ async function sendEmail(e: Email): Promise<boolean> {
     return true;
   }
   try {
-    await transporter.sendMail({ from: FROM, to: e.to, subject: e.subject, html: e.html, text: e.text });
+    const info = await transporter.sendMail({ from: FROM, to: e.to, subject: e.subject, html: e.html, text: e.text, attachments: e.attachments });
+    if (OUT_DIR) {
+      const file = path.join(OUT_DIR, `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${e.kind}.eml`);
+      writeFileSync(file, (info as unknown as { message: Buffer }).message);
+      console.log(`[email:file] ${file}`);
+      await log("LOGGED");
+      return true;
+    }
     await log("SENT");
     return true;
   } catch (err) {
@@ -132,6 +150,7 @@ type Data = {
   teams: Map<string, WithId<Team>>;
   equipment: WithId<EquipmentRequest>[];
   meetings: WithId<MeetingRequest>[];
+  lessons: WithId<Lesson>[]; // not archived / not active-only: still worked on or recently approved
 };
 
 /**
@@ -142,7 +161,7 @@ type Data = {
 async function loadData(settings: Settings): Promise<Data> {
   const since = settings.lastReportAt ?? Date.now() - 7 * 864e5;
   const c = (name: string) => db.collection(name);
-  const [workers, priv, openTasks, doneTasks, projects, teams, equipment, meetings] = await Promise.all([
+  const [workers, priv, openTasks, doneTasks, projects, teams, equipment, meetings, lessons] = await Promise.all([
     all<Worker>(c("workers")),
     all<WorkerPrivate>(c("workerPrivate")),
     all<Task>(c("tasks").where("status", "!=", "DONE")),
@@ -151,10 +170,21 @@ async function loadData(settings: Settings): Promise<Data> {
     all<Team>(c("teams")),
     all<EquipmentRequest>(c("equipment").where("status", "in", ["PENDING", "APPROVED", "ORDERED"])),
     all<MeetingRequest>(c("meetings").where("status", "in", ["OPEN", "SCHEDULED"])),
+    all<Lesson>(c("lessons").where("status", "in", [...WORKING_STATUSES, "APPROVED"])),
   ]);
   const tasks = [...new Map([...openTasks, ...doneTasks.filter((t) => t.status === "DONE")].map((t) => [t.id, t])).values()];
   const map = <T extends { id: string }>(l: T[]) => new Map(l.map((x) => [x.id, x]));
-  return { settings, workers: map(workers), priv: map(priv), tasks, projects: map(projects), teams: map(teams), equipment, meetings };
+  return {
+    settings,
+    workers: map(workers),
+    priv: map(priv),
+    tasks,
+    projects: map(projects),
+    teams: map(teams),
+    equipment,
+    meetings,
+    lessons: lessons.map((l) => withLessonDefaults(l)),
+  };
 }
 
 const toReportTask = (d: Data, t: WithId<Task>): ReportTask => ({
@@ -212,7 +242,124 @@ function buildReport(d: Data, workerId: string, since: number): WorkerReport {
       .filter((m) => m.requesterId === workerId && ["OPEN", "SCHEDULED"].includes(m.status))
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((m) => ({ topic: m.topic, withTeam: m.withTeamId ? (d.teams.get(m.withTeamId)?.name ?? null) : null, status: m.status })),
+    lessons: d.lessons
+      .filter((l) => l.ownerIds.includes(workerId) && WORKING_STATUSES.includes(l.status))
+      .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
+      .map((l) => ({ title: l.title, status: LESSON_STATUS[l.status], dueDate: l.dueDate, late: isLessonLate(l, todayLocal()) })),
   };
+}
+
+// ---------------------------------------------------------------- lessons
+
+async function getDoc<T>(p: string): Promise<WithId<T> | null> {
+  const snap = await db.doc(p).get();
+  reads += 1;
+  return snap.exists ? ({ id: snap.id, ...(snap.data() as T) }) : null;
+}
+
+/** Rebuilds an uploaded lesson file from its chunks. */
+async function loadFile(fileId: string): Promise<{ meta: LessonFile; content: Buffer } | null> {
+  const meta = await getDoc<LessonFile>(`lessonFiles/${fileId}`);
+  if (!meta || meta.deleted) return null;
+  const chunks = await db.collection(`lessonFiles/${fileId}/chunks`).orderBy("n").get();
+  reads += Math.max(1, chunks.size);
+  const content = Buffer.concat(chunks.docs.map((c) => Buffer.from(c.get("data") as Uint8Array)));
+  if (content.length !== meta.size) throw new Error(`file ${fileId} is incomplete (${content.length}/${meta.size} bytes)`);
+  return { meta, content };
+}
+
+/** Keeps the bytes of the 3 newest files of a lesson; older ones keep only their details. */
+async function pruneLessonFiles(lessonId: string, keep = 3) {
+  const files = await db.collection("lessonFiles").where("lessonId", "==", lessonId).get();
+  reads += Math.max(1, files.size);
+  const old = files.docs
+    .filter((f) => !f.get("deleted"))
+    .sort((a, b) => (b.get("createdAt") ?? 0) - (a.get("createdAt") ?? 0))
+    .slice(keep);
+  for (const f of old) {
+    const chunks = await f.ref.collection("chunks").get();
+    const batch = db.batch();
+    chunks.docs.forEach((c) => batch.delete(c.ref));
+    batch.update(f.ref, { deleted: true });
+    await batch.commit();
+    console.log(`pruned old file ${f.id} of lesson ${lessonId}`);
+  }
+}
+
+const ownerNames = (d: Data, l: Lesson) => l.ownerIds.map((id) => d.workers.get(id)?.name).filter((n): n is string => !!n);
+
+async function lessonSubmitted(d: Data, lessonId: string, submissionId: string): Promise<string> {
+  const subRef = db.doc(`lessonSubmissions/${submissionId}`);
+  const sub = await getDoc<LessonSubmission>(subRef.path);
+  const raw = await getDoc<Lesson>(`lessons/${lessonId}`);
+  if (!sub || !raw) return "skipped: lesson or submission not found";
+  const lesson = withLessonDefaults(raw);
+  const fail = async (why: string) => {
+    await subRef.update({ emailStatus: "failed", emailError: why.slice(0, 300), emailAt: Date.now() });
+    return `failed: ${why}`;
+  };
+  if (!d.settings.managerEmail) return fail("לא הוגדרה כתובת מייל של המנהלת (דוחות והגדרות)");
+  const file = sub.fileId ? await loadFile(sub.fileId) : null;
+  if (sub.fileId && !file) return fail("הקובץ לא נמצא במערכת");
+  const e = lessonSubmittedEmail({
+    lesson,
+    ownerNames: ownerNames(d, lesson),
+    submittedBy: sub.submittedBy ? (d.workers.get(sub.submittedBy)?.name ?? "מדריך") : "המנהלת",
+    version: sub.version,
+    fileName: file?.meta.name ?? null,
+    note: sub.note,
+    url: adminUrl(`/admin/lessons/${lessonId}`),
+  });
+  const ok = await sendEmail({
+    ...e,
+    to: d.settings.managerEmail,
+    kind: "lesson-submitted",
+    attachments: file ? [{ filename: file.meta.name, content: file.content, contentType: file.meta.mimeType }] : undefined,
+  });
+  if (!ok) return fail("שליחת המייל נכשלה – ראו יומן מיילים");
+  await subRef.update({ emailStatus: "sent", emailError: null, emailAt: Date.now() });
+  await pruneLessonFiles(lessonId);
+  return "sent";
+}
+
+async function lessonDecision(d: Data, lessonId: string, submissionId: string): Promise<string> {
+  const sub = await getDoc<LessonSubmission>(`lessonSubmissions/${submissionId}`);
+  const raw = await getDoc<Lesson>(`lessons/${lessonId}`);
+  if (!sub?.decision || !raw) return "skipped: no decision";
+  const lesson = withLessonDefaults(raw);
+  const emails = lesson.ownerIds
+    .map((id) => recipient(d, id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .map((r) => ({
+      ...lessonDecisionEmail({
+        workerName: r.worker.name,
+        lesson,
+        decision: sub.decision!,
+        notes: sub.decisionNotes,
+        version: sub.version,
+        personalUrl: personalUrl(r.token),
+      }),
+      to: r.email,
+      kind: "lesson-decision",
+    }));
+  const res = await sendMany(emails);
+  return `decision: ${res.sent}/${res.total} sent`;
+}
+
+async function lessonAssigned(d: Data, lessonId: string, workerIds: string[]): Promise<string> {
+  const raw = await getDoc<Lesson>(`lessons/${lessonId}`);
+  if (!raw) return "skipped: lesson not found";
+  const lesson = withLessonDefaults(raw);
+  const emails = workerIds
+    .map((id) => recipient(d, id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .map((r) => ({
+      ...lessonAssignedEmail({ workerName: r.worker.name, lesson, ownerNames: ownerNames(d, lesson), personalUrl: personalUrl(r.token) }),
+      to: r.email,
+      kind: "lesson-assigned",
+    }));
+  const res = await sendMany(emails);
+  return `assigned: ${res.sent}/${res.total} sent`;
 }
 
 async function sendReports(d: Data, workerIds: string[] | null, note: string | null, since: number | null) {
@@ -267,6 +414,12 @@ async function handle(d: Data, item: OutboxDoc): Promise<string> {
       });
       return (await sendEmail({ ...e, to: d.settings.managerEmail, kind: "test" })) ? "sent" : "failed";
     }
+    case "lesson-submitted":
+      return lessonSubmitted(d, item.lessonId, item.submissionId);
+    case "lesson-decision":
+      return lessonDecision(d, item.lessonId, item.submissionId);
+    case "lesson-assigned":
+      return lessonAssigned(d, item.lessonId, item.workerIds);
   }
 }
 
@@ -360,6 +513,20 @@ async function dueReminders(d: Data, now: Date) {
   for (const t of due) slot(t.assigneeId!).tasks.push(t);
   for (const { t, r } of reviews) slot(t.assigneeId!).reviews.push({ taskTitle: t.title, date: r.date, note: r.note });
 
+  // Lessons: the final deadline and review dates tomorrow, to every instructor of the lesson.
+  const lessonsDue = d.lessons.filter((l) => WORKING_STATUSES.includes(l.status) && l.dueDate === tomorrow && !l.reminderSentAt);
+  const lessonReviews = d.lessons.flatMap((l) =>
+    WORKING_STATUSES.includes(l.status)
+      ? (l.reviews ?? []).filter((r) => r.date === tomorrow && !r.done && !(l.remindedReviewIds ?? []).includes(r.id)).map((r) => ({ l, r }))
+      : [],
+  );
+  for (const l of lessonsDue) {
+    for (const wid of l.ownerIds) if (recipient(d, wid)) slot(wid).reviews.push({ taskTitle: `מערך "${l.title}"`, date: tomorrow, note: "תאריך היעד הסופי" });
+  }
+  for (const { l, r } of lessonReviews) {
+    for (const wid of l.ownerIds) if (recipient(d, wid)) slot(wid).reviews.push({ taskTitle: `מערך "${l.title}"`, date: r.date, note: r.note });
+  }
+
   const emails = [...byWorker.entries()].map(([wid, x]) => {
     const rc = recipient(d, wid)!;
     const e = dueReminderEmail({
@@ -374,6 +541,8 @@ async function dueReminders(d: Data, now: Date) {
   const batch = db.batch();
   due.forEach((t) => batch.update(db.doc(`tasks/${t.id}`), { reminderSentAt: now.getTime() }));
   reviews.forEach(({ t, r }) => batch.update(db.doc(`tasks/${t.id}`), { remindedReviewIds: FieldValue.arrayUnion(r.id) }));
+  lessonsDue.forEach((l) => batch.update(db.doc(`lessons/${l.id}`), { reminderSentAt: now.getTime() }));
+  lessonReviews.forEach(({ l, r }) => batch.update(db.doc(`lessons/${l.id}`), { remindedReviewIds: FieldValue.arrayUnion(r.id) }));
   await batch.commit();
   console.log(`reminders: ${result.sent}/${result.total} sent`);
 }

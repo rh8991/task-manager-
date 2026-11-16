@@ -7,6 +7,7 @@ import { FlashBox, useFlash } from "./Flash";
 
 const LINKS = [
   { to: "/admin", label: "סקירה", end: true },
+  { to: "/admin/lessons", label: "מערכים" },
   { to: "/admin/tasks", label: "משימות" },
   { to: "/admin/projects", label: "פרויקטים" },
   { to: "/admin/workers", label: "עובדים וצוותים" },

@@ -13,7 +13,7 @@ export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-const C = {
+export const C = {
   ink: "#1f2937",
   muted: "#6b7280",
   line: "#e5e7eb",
@@ -23,7 +23,7 @@ const C = {
   bg: "#f3f4f6",
 };
 
-function layout(title: string, body: string, buttons: { label: string; href: string }[] = []): string {
+export function layout(title: string, body: string, buttons: { label: string; href: string }[] = []): string {
   const btns = buttons
     .map(
       (b, i) =>
@@ -115,6 +115,18 @@ export function taskAssignedEmail(p: {
   return { subject, html: layout(subject, body, [{ label: "לעמוד המשימות שלי", href: p.personalUrl }]), text };
 }
 
+function lessonsHtml(r: WorkerReport): string {
+  if (!r.lessons?.length) return "";
+  return `<h2 style="font-size:16px;margin:20px 0 6px;">המערכים שלי (${r.lessons.length})</h2><ul style="margin:0;padding-right:20px;">${r.lessons
+    .map(
+      (l) =>
+        `<li><strong>${esc(l.title)}</strong> – ${esc(l.status)}${l.dueDate ? ` · יעד ${formatDate(l.dueDate)}` : ""}${
+          l.late ? ` <span style="color:${C.red};font-weight:700;">(באיחור)</span>` : ""
+        }</li>`,
+    )
+    .join("")}</ul>`;
+}
+
 export function reportEmail(p: {
   report: WorkerReport;
   personalUrl: string;
@@ -155,6 +167,7 @@ export function reportEmail(p: {
     taskSection("השבוע הקרוב", C.ink, r.tasks.thisWeek) +
     taskSection("בהמשך", C.ink, r.tasks.later) +
     taskSection("ללא תאריך יעד", C.muted, r.tasks.noDate) +
+    lessonsHtml(r) +
     equipment +
     meetings;
 
@@ -165,6 +178,9 @@ export function reportEmail(p: {
     taskText("השבוע הקרוב", r.tasks.thisWeek) +
     taskText("בהמשך", r.tasks.later) +
     taskText("ללא תאריך יעד", r.tasks.noDate) +
+    (r.lessons?.length
+      ? `\nהמערכים שלי:\n${r.lessons.map((l) => `- ${l.title}: ${l.status}${l.dueDate ? ` · יעד ${formatDate(l.dueDate)}` : ""}${l.late ? " (באיחור)" : ""}`).join("\n")}\n`
+      : "") +
     (r.equipment.length ? `\nציוד:\n${r.equipment.map((e) => `- ${e.item} × ${e.quantity}: ${EQUIPMENT_STATUS[e.status]}`).join("\n")}\n` : "") +
     (r.meetings.length
       ? `\nפגישות:\n${r.meetings.map((m) => `- ${m.topic}${m.withTeam ? ` (${m.withTeam})` : ""}: ${MEETING_STATUS[m.status]}`).join("\n")}\n`

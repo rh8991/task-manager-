@@ -9,6 +9,46 @@ import { Badge, Stat } from "@/components/ui";
 import { addDays } from "@/lib/dates";
 import { REVIEW_STATE, REVIEW_TONE, reviewState } from "@/lib/reviews";
 import { useAct } from "@/components/Flash";
+import { LessonStatusBadge, SafetyTags } from "@/components/LessonParts";
+import { isLessonLate, withLessonDefaults } from "@/lib/lessons";
+import type { Lesson } from "@/lib/types";
+
+/** Lessons waiting for the manager's review, and lessons past their deadline. */
+function LessonsOverview({ today, workerName }: { today: string; workerName: (id: string) => string | undefined }) {
+  const lessons = useCollection<Lesson>("lessons", { where: ["status", "in", ["IDEA", "IN_PROGRESS", "SUBMITTED", "CHANGES_REQUESTED"]] });
+  const list = lessons.data.map((l) => withLessonDefaults(l));
+  const waiting = list.filter((l) => l.status === "SUBMITTED");
+  const late = list.filter((l) => isLessonLate(l, today));
+  const soon = list.filter((l) => !isLessonLate(l, today) && l.dueDate && l.dueDate <= addDays(today, 14) && l.status !== "SUBMITTED");
+  const rows = [...waiting, ...late.filter((l) => !waiting.includes(l)), ...soon];
+  return (
+    <section className="card">
+      <div className="spread">
+        <h2 style={{ margin: 0 }}>מערכים: ממתינים לבדיקה ({waiting.length}) · באיחור ({late.length}) · יעד בשבועיים הקרובים ({soon.length})</h2>
+        <Link to="/admin/lessons" className="small">לכל המערכים ←</Link>
+      </div>
+      {rows.length === 0 ? (
+        <p className="empty">אין מערכים שדורשים תשומת לב</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <tbody>
+              {rows.map((l) => (
+                <tr key={l.id} className={isLessonLate(l, today) ? "overdue" : ""}>
+                  <td><Link to={`/admin/lessons/${l.id}`}><strong>{l.title}</strong></Link></td>
+                  <td>{l.ownerIds.map(workerName).filter(Boolean).join(", ") || <span className="muted">לא שויך</span>}</td>
+                  <td><LessonStatusBadge status={l.status} /></td>
+                  <td className={`nowrap ${isLessonLate(l, today) ? "danger-text" : ""}`}>{formatDate(l.dueDate) || "—"}</td>
+                  <td><SafetyTags lesson={l} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function Overview() {
   const act = useAct();
@@ -54,6 +94,8 @@ export function Overview() {
         <Stat num={openMeetings.length} label="פגישות נדרשות" />
         <Stat num={upcomingReviews.length} label="ביקורות השבוע" alert={upcomingReviews.some(({ r }) => r.date < today)} />
       </div>
+
+      <LessonsOverview today={today} workerName={(id) => workerMap.get(id)?.name} />
 
       <section className="card">
         <h2>ביקורות קרובות (7 ימים) ובאיחור</h2>

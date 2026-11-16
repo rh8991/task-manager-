@@ -9,6 +9,7 @@ import { oneOf, optDate, optInt, optNum, optStr, optUrl, str } from "@/lib/formd
 import { requestEquipment, requestMeeting, updateMyTask } from "@/lib/workerActions";
 import { Badge, Options } from "@/components/ui";
 import { ReviewList } from "@/components/Reviews";
+import { MyLessons } from "@/components/MyLessons";
 import { FlashBox, useAct } from "@/components/Flash";
 import { SubmitButton } from "@/components/SubmitButton";
 import { UserError } from "@/lib/actions";
@@ -115,11 +116,14 @@ function WorkerHome({ token, workerId, worker }: { token: string; workerId: stri
         <div className="topbar-inner">
           <span className="brand">שלום {worker.name} 👋</span>
           <span className="muted small" style={{ flex: 1 }}>{worker.teamId ? `צוות ${teamMap.get(worker.teamId)?.name ?? ""}` : ""}</span>
+          <Link to={`/lessons?w=${token}`} className="btn ghost sm">לוח מערכים</Link>
           <Link to={`/?w=${token}`} className="btn ghost sm">ללוח המשותף</Link>
         </div>
       </header>
       <main className="container">
         <FlashBox />
+
+        <MyLessons who={who} />
 
         <h1>המשימות שלי ({open.length})</h1>
         {tasks.loading && <p className="muted">טוען…</p>}

@@ -6,7 +6,7 @@ import { PRIORITY, TASK_STATUS } from "@/lib/labels";
 import { deleteTask, resendTaskEmail, setReviewDone, updateTask } from "@/lib/actions";
 import { parseReviewField } from "@/lib/reviews";
 import { ReviewList, ReviewsEditor } from "@/components/Reviews";
-import { PRIORITIES, TASK_STATUSES, type Project, type Task, type TaskUpdate, type Worker } from "@/lib/types";
+import { PRIORITIES, TASK_STATUSES, type Lesson, type Project, type Task, type TaskUpdate, type Team, type Worker } from "@/lib/types";
 import { oneOf, optDate, optStr, str } from "@/lib/formdata";
 import { Badge, Options } from "@/components/ui";
 import { useAct } from "@/components/Flash";
@@ -19,6 +19,8 @@ export function TaskDetail() {
   const task = useDocument<Task>(`tasks/${id}`);
   const workers = useCollection<Worker>("workers");
   const projects = useCollection<Project>("projects");
+  const teams = useCollection<Team>("teams");
+  const lessons = useCollection<Lesson>("lessons");
   const updates = useCollection<TaskUpdate>("taskUpdates", { where: ["taskId", "==", id] });
 
   if (task.loading) return <p className="muted">טוען…</p>;
@@ -38,6 +40,8 @@ export function TaskDetail() {
       dueDate: optDate(fd, "dueDate"),
       projectId: optStr(fd, "projectId"),
       assigneeId: optStr(fd, "assigneeId"),
+      teamId: optStr(fd, "teamId"),
+      lessonId: optStr(fd, "lessonId"),
       comment: optStr(fd, "comment"),
       reviews: parseReviewField(fd.get("reviews")),
     });
@@ -92,6 +96,20 @@ export function TaskDetail() {
                 <select name="projectId" defaultValue={t.projectId ?? ""}>
                   <option value="">— ללא —</option>
                   {projects.data.map((p) => <option key={p.id} value={p.id}>{p.name}{p.active ? "" : " (בארכיון)"}</option>)}
+                </select>
+              </label>
+              <label>
+                מחלקה
+                <select name="teamId" defaultValue={t.teamId ?? ""}>
+                  <option value="">— ללא —</option>
+                  {teams.data.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              </label>
+              <label>
+                מערך
+                <select name="lessonId" defaultValue={t.lessonId ?? ""}>
+                  <option value="">— משימה כללית —</option>
+                  {lessons.data.map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
                 </select>
               </label>
               <label>סטטוס<select name="status" defaultValue={t.status}><Options map={TASK_STATUS} /></select></label>

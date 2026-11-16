@@ -26,7 +26,9 @@ export function ActForm({
     const form = e.currentTarget;
     setPending(true);
     try {
-      const ok = await action(new FormData(form));
+      // Include the clicked button's name/value (e.g. "approve" vs "return").
+      const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+      const ok = await action(new FormData(form, submitter?.form === form ? submitter : undefined));
       if (ok && !keepValues) form.reset();
     } finally {
       setPending(false);

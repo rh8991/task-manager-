@@ -6,6 +6,9 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Login } from "@/pages/Login";
 import { WorkerPage } from "@/pages/WorkerPage";
 import { TaskView } from "@/pages/TaskView";
+import { AllergenCheck, LessonPrint, LessonView, LessonsBoard } from "@/pages/LessonPages";
+import { LessonsPage } from "@/pages/admin/Lessons";
+import { LessonDetail } from "@/pages/admin/LessonDetail";
 import { Overview } from "@/pages/admin/Overview";
 import { TasksPage } from "@/pages/admin/Tasks";
 import { TaskDetail } from "@/pages/admin/TaskDetail";
@@ -38,8 +41,14 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/w/:token" element={<WorkerPage />} />
           <Route path="/task/:id" element={<TaskView />} />
+          <Route path="/lessons" element={<LessonsBoard />} />
+          <Route path="/lesson/:id" element={<LessonView />} />
+          <Route path="/lesson/:id/print" element={<LessonPrint />} />
+          <Route path="/allergens" element={<AllergenCheck />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
+            <Route path="lessons" element={<LessonsPage />} />
+            <Route path="lessons/:id" element={<LessonDetail />} />
             <Route path="tasks" element={<TasksPage />} />
             <Route path="tasks/:id" element={<TaskDetail />} />
             <Route path="projects" element={<ProjectsPage />} />

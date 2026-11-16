@@ -53,6 +53,8 @@ export type WorkerReport = {
   doneSinceLastReport: number;
   equipment: { item: string; quantity: number; status: EquipmentStatus }[];
   meetings: { topic: string; withTeam: string | null; status: MeetingStatus }[];
+  /** Lessons the worker is an instructor on (status already as a Hebrew label). */
+  lessons?: { title: string; status: string; dueDate: string | null; late: boolean }[];
 };
 
 export function openTaskCount(g: GroupedTasks): number {
