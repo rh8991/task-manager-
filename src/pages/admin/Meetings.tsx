@@ -4,7 +4,7 @@ import { byId, useCollection } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
 import { MEETING_STATUS } from "@/lib/labels";
 import { createMeeting, deleteMeeting, setMeetingStatus } from "@/lib/actions";
-import { MEETING_STATUSES, type MeetingRequest, type MeetingStatus, type Team, type Worker } from "@/lib/types";
+import { MEETING_STATUSES, type MeetingRequest, type Lesson, type MeetingStatus, type Team, type Worker } from "@/lib/types";
 import { oneOf, optDate, optStr, str } from "@/lib/formdata";
 import { Badge } from "@/components/ui";
 import { useAct } from "@/components/Flash";
@@ -22,6 +22,8 @@ export function MeetingsPage() {
   const meetings = useCollection<MeetingRequest>("meetings", { where: ["status", "in", filter.statuses] });
   const teams = useCollection<Team>("teams");
   const workers = useCollection<Worker>("workers");
+  const lessons = useCollection<Lesson>("lessons");
+  const lessonMap = byId(lessons.data);
   const teamMap = byId(teams.data);
   const workerMap = byId(workers.data);
 
@@ -97,7 +99,7 @@ export function MeetingsPage() {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>נושא</th><th>מבקש/ת</th><th>עם צוות</th><th>נדרש עד</th><th>סטטוס</th><th>עדכון</th></tr></thead>
+              <thead><tr><th>נושא</th><th>מי ביקש/ה</th><th>עם צוות</th><th>נדרש עד</th><th>סטטוס</th><th>עדכון</th></tr></thead>
               <tbody>
                 {list.map((m) => {
                   const req = m.requesterId ? workerMap.get(m.requesterId) : undefined;
@@ -106,10 +108,12 @@ export function MeetingsPage() {
                       <td>
                         <strong>{m.topic}</strong>
                         {m.notes && <div className="muted small pre">{m.notes}</div>}
+                        {m.lessonId && lessonMap.get(m.lessonId) && (
+                          <div className="small">מערך: <Link to={`/admin/lessons/${m.lessonId}`}>{lessonMap.get(m.lessonId)!.title}</Link></div>
+                        )}
                       </td>
                       <td>
                         {req?.name ?? <span className="muted">מנהל</span>}
-                        {req?.teamId && <div className="muted small">צוות {teamMap.get(req.teamId)?.name}</div>}
                       </td>
                       <td>{(m.withTeamId && teamMap.get(m.withTeamId)?.name) ?? "—"}</td>
                       <td className="nowrap">{formatDate(m.neededBy) || "—"}</td>

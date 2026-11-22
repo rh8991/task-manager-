@@ -22,7 +22,7 @@ import { dueReminderEmail, managerNoticeEmail, reportEmail, taskAssignedEmail } 
 import { groupTasks, type ReportTask, type WorkerReport } from "../src/lib/report";
 import { areRemindersDue, isWeeklyReportDue } from "../src/lib/schedule";
 import { nextReview } from "../src/lib/reviews";
-import { lessonAssignedEmail, lessonDecisionEmail, lessonSubmittedEmail } from "../src/lib/lesson-emails";
+import { instructorWelcomeEmail, lessonAssignedEmail, lessonDecisionEmail, lessonSubmittedEmail, loginLinkEmail } from "../src/lib/lesson-emails";
 import { LESSON_STATUS, WORKING_STATUSES, isLessonLate, withLessonDefaults } from "../src/lib/lessons";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -61,8 +61,11 @@ const app = initializeApp(serviceAccount ? { credential: cert(serviceAccount) } 
 const db: Firestore = getFirestore(app);
 
 const APP_URL = (env.APP_URL || "http://localhost:5173/").replace(/\/?$/, "/");
-const personalUrl = (token: string) => `${APP_URL}#/w/${token}`;
-const dashboardUrl = (token: string) => `${APP_URL}#/?w=${token}`;
+// Instructors sign in with an email link; their page is #/me (the site asks them to sign in if needed).
+const personalUrl = (_token?: string) => `${APP_URL}#/me`;
+const dashboardUrl = (_token?: string) => `${APP_URL}#/lessons`;
+/** A one-time sign-in link (Admin SDK: not limited like Firebase's own sign-in emails). */
+const signInLink = (email: string) => getAuth(app).generateSignInWithEmailLink(email, { url: APP_URL, handleCodeInApp: true });
 const adminUrl = (path: string) => `${APP_URL}#${path.startsWith("/") ? path : `/${path}`}`;
 
 // ---------------------------------------------------------------- email
@@ -234,14 +237,9 @@ function buildReport(d: Data, workerId: string, since: number): WorkerReport {
     workerName: d.workers.get(workerId)!.name,
     tasks: groupTasks(mine.filter((t) => t.status !== "DONE").map((t) => toReportTask(d, t)), todayLocal()),
     doneSinceLastReport: mine.filter((t) => t.status === "DONE" && (t.completedAt ?? 0) > since).length,
-    equipment: d.equipment
-      .filter((e) => e.requesterId === workerId && ["PENDING", "APPROVED", "ORDERED"].includes(e.status))
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map((e) => ({ item: e.item, quantity: e.quantity, status: e.status })),
-    meetings: d.meetings
-      .filter((m) => m.requesterId === workerId && ["OPEN", "SCHEDULED"].includes(m.status))
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map((m) => ({ topic: m.topic, withTeam: m.withTeamId ? (d.teams.get(m.withTeamId)?.name ?? null) : null, status: m.status })),
+    // Equipment orders and meetings with other teams are the manager's, not in instructors' reports.
+    equipment: [],
+    meetings: [],
     lessons: d.lessons
       .filter((l) => l.ownerIds.includes(workerId) && WORKING_STATUSES.includes(l.status))
       .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
@@ -298,16 +296,18 @@ async function lessonSubmitted(d: Data, lessonId: string, submissionId: string):
     await subRef.update({ emailStatus: "failed", emailError: why.slice(0, 300), emailAt: Date.now() });
     return `failed: ${why}`;
   };
-  if (!d.settings.managerEmail) return fail("לא הוגדרה כתובת מייל של המנהלת (דוחות והגדרות)");
+  if (!d.settings.managerEmail) return fail("לא הוגדרה כתובת מייל של המנהל (דוחות והגדרות)");
   const file = sub.fileId ? await loadFile(sub.fileId) : null;
   if (sub.fileId && !file) return fail("הקובץ לא נמצא במערכת");
   const e = lessonSubmittedEmail({
     lesson,
     ownerNames: ownerNames(d, lesson),
-    submittedBy: sub.submittedBy ? (d.workers.get(sub.submittedBy)?.name ?? "מדריך") : "המנהלת",
+    submittedBy: sub.submittedBy ? (d.workers.get(sub.submittedBy)?.name ?? "מדריך") : "המנהל",
     version: sub.version,
     fileName: file?.meta.name ?? null,
     note: sub.note,
+    report: sub.report,
+    today: todayLocal(),
     url: adminUrl(`/admin/lessons/${lessonId}`),
   });
   const ok = await sendEmail({
@@ -418,6 +418,8 @@ async function handle(d: Data, item: OutboxDoc): Promise<string> {
       return lessonSubmitted(d, item.lessonId, item.submissionId);
     case "lesson-decision":
       return lessonDecision(d, item.lessonId, item.submissionId);
+    case "instructor-welcome":
+      return instructorWelcome(d, item.workerId);
     case "lesson-assigned":
       return lessonAssigned(d, item.lessonId, item.workerIds);
   }
@@ -549,9 +551,39 @@ async function dueReminders(d: Data, now: Date) {
 
 // ---------------------------------------------------------------- main
 
+async function instructorWelcome(d: Data, workerId: string): Promise<string> {
+  const r = recipient(d, workerId);
+  if (!r) return "skipped: instructor not active";
+  const e = instructorWelcomeEmail({ workerName: r.worker.name, loginUrl: await signInLink(r.email), managerName: d.settings.managerName });
+  return (await sendEmail({ ...e, to: r.email, kind: "instructor-welcome" })) ? "sent" : "failed";
+}
+
+/**
+ * "Send me a sign-in link" requests left by the site when Firebase's daily email quota was used up.
+ * Only for active instructors and the managers (ADMIN_EMAILS); at most one email per 10 minutes each.
+ */
+async function processLoginRequests() {
+  const snap = await db.collection("loginRequests").get();
+  reads += Math.max(1, snap.size);
+  if (snap.empty) return;
+  const admins = (env.ADMIN_EMAILS ?? "").split(/[,;s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  for (const req of snap.docs) {
+    const email = String(req.get("email") ?? req.id).toLowerCase();
+    await req.ref.delete();
+    const member = await db.doc(`members/${email}`).get();
+    reads += 1;
+    if (!admins.includes(email) && !member.get("active")) continue;
+    const last = await db.collection("emailLog").where("to", "==", email).where("kind", "==", "login-link").orderBy("createdAt", "desc").limit(1).get();
+    if (!last.empty && Date.now() - (last.docs[0].get("createdAt") ?? 0) < 10 * 60_000) continue;
+    const e = loginLinkEmail({ loginUrl: await signInLink(email) });
+    await sendEmail({ ...e, to: email, kind: "login-link" });
+  }
+}
+
 async function main() {
   const now = new Date();
   await syncAdmins();
+  await processLoginRequests();
 
   // Cheap checks first: most runs have nothing to do and should cost only a few reads.
   const settings = await loadSettings();

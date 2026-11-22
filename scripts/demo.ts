@@ -37,8 +37,9 @@ const timer = setInterval(() => {
 console.log(`
 =================================================================
   Open:     http://localhost:5173
-  Manager:  ניהול → manager@example.com / manager123
-  Workers:  Workers page (עובדים וצוותים) → "פתיחה" opens a worker's personal link
+  Manager:  "כניסת מנהל עם סיסמה" → manager@example.com / manager123
+  Instructor: type dana@example.com → "שלחו לי קישור כניסה" → "כניסה (הדגמה)"
+            (use another browser / private window to be manager and instructor at once)
   Emails:   the mailer runs every minute; see the email log on the Reports page
             (marked "לא נשלח (אין SMTP)" – nothing is really emailed in the demo)
   Stop:     Ctrl+C

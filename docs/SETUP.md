@@ -1,6 +1,6 @@
 # Setup: GitHub Pages + Firebase
 
-Last updated: 2026-11-15. Everything here is free: Firebase Spark plan, GitHub Pages, GitHub Actions on a public repo, and Brevo's free plan.
+Last updated: 2026-11-22. Everything here is free: Firebase Spark plan, GitHub Pages, GitHub Actions on a public repo, and Brevo's free plan.
 
 The app now runs on **GitHub Pages + Firebase**. The previous Neon/Vercel setup isn't used any more; you can delete the Neon project "task-manager" whenever you like.
 
@@ -17,8 +17,8 @@ You'll need about 30 minutes, and all of it can be done in Chrome.
 2. Pick a location, for example **eur3 (Europe)** or **europe-west**. It can't be changed later.
 3. Choose **production mode**. The deploy workflow installs the real security rules (step 8).
 
-## 3. Turn on manager sign-in
-1. Open **Build → Authentication → Get started**, then **Sign-in method → Email/Password → Enable → Save**.
+## 3. Turn on sign-in (manager + instructors)
+1. Open **Build → Authentication → Get started**, then **Sign-in method → Email/Password → Enable**, and also turn on **Email link (passwordless sign-in)** → **Save**. Instructors sign in with a link sent to their email (no password).
 2. Under **Users → Add user**, enter the manager's email and a strong password.
 3. Under **Settings → Authorized domains → Add domain**, add `rh8991.github.io`. This is needed for the "forgot password" email link.
 
@@ -71,51 +71,48 @@ Merge the pull request for this work into `main`. GitHub Actions then:
 Watch progress under the repo's **Actions** tab; each run should show a green tick. If the **firestore-rules** step fails with a permissions error, open Firebase **Firestore → Rules**, paste in the contents of `firestore.rules` from the repo, and click **Publish**.
 
 ## 9. First use
-1. Open the site, then **ניהול** (manage), and sign in with the manager account.
+1. Open the site and choose **"כניסת מנהל עם סיסמה"** (manager sign-in with password), with the manager account from step 3.
    - If it says **"אין הרשאת מנהל"** (no manager access), wait up to 10 minutes, or open **Actions → mailer → Run workflow**, then refresh the page.
-2. **עובדים וצוותים** (workers and teams): add your workers. For all 30 at once, use **"+ הוספת כמה עובדים יחד"** (add several workers; see "How to check it's working" below).
-3. **דוחות והגדרות** (reports and settings): enter your name and email, save, then press **שליחת מייל בדיקה** (send test email). It arrives within about 10–15 minutes. To send it right away, use **Actions → mailer → Run workflow**.
-4. Choose whether to turn on the weekly report, and pick the day and hour.
-5. Create tasks. Each worker gets an email with their personal link.
+2. **צוותים** (teams): add the teams you work with, e.g. **מעבדה** (lab) and **אחזקה** (maintenance), with a contact person. Only the manager sees teams.
+3. **מדריכים** (instructors): add your instructors (one at a time, or paste "name, email" lines). Each one gets a welcome email with a sign-in link.
+4. **דוחות והגדרות** (reports and settings): enter your name and email, save, then press **שליחת מייל בדיקה** (send test email). Lesson files and status reports arrive at this address.
+5. **מערכים** (lessons): create lessons – place (Science Park / Science Museum), ages (elementary by grade, middle school, high school), final deadline, review dates, and the instructors working on each.
 
----
+## Who sees what
+| | Manager | Instructor (מדריך/ה) |
+|---|---|---|
+| Lessons: status, who works on each, dates | sees and edits everything | sees all lessons; on their own lessons: sets "idea" / "in progress", edits the equipment list, parts and safety |
+| Send the lesson file for review | can upload too | uploads the file + a status report (done / next / blockers) → emailed to the manager with the file attached |
+| Approve / return with notes, create / delete lessons and instructors | ✓ | – (instructors can't delete anything) |
+| Teams, equipment orders, meetings with teams | ✓ | – (they can send a "request to the manager", which shows up in the lesson's meetings) |
+| Tasks | all | only their own (status + comment) |
+
+Nothing is visible without signing in.
+
+**Sign-in links and the free plan:** Firebase itself sends only **5 sign-in emails a day** on the free plan. When that runs out, the site asks the mailer to send the link through Brevo instead; it arrives within about 10–15 minutes. Instructors stay signed in on their device, so this is rarely needed.
 
 ## Science program: lessons (מערכים)
-1. On **עובדים וצוותים**, create the departments as teams: **מדריכים**, **מעבדה**, **אחזקה** (instructors, lab, maintenance), and put each worker in one.
-2. On **מערכים** (manager panel), click **+ מערך חדש**: name, subject, grades, final deadline, and the instructors working on it. They get an email.
-3. In the lesson page add the parts of the lesson, the **equipment list** (or paste it: one item per line), mark **allergens** and **hazards**, and the review dates.
-4. Instructors see the lesson on their personal page, can edit the equipment list, and **send the lesson file for review**. You get the file attached to an email within ~10–15 minutes, and approve it or return it with notes in the lesson page.
-5. The lab prints the equipment checklist from the lesson page (**רשימת ציוד להדפסה**). Before a group arrives, check allergies at **בודק אלרגיות**.
+1. On **מערכים** (manager panel), click **+ מערך חדש** (new lesson). The assigned instructors get an email.
+2. In the lesson page, add the parts of the lesson, the **equipment list** (or paste it: one item per line), mark **allergens** and **hazards**, and the review dates.
+3. Instructors work on it from **המערכים שלי** (my lessons), and **send the file for review** with a status report. You get the file attached to an email, then approve it or return it with notes in the lesson page.
+4. Order equipment for a lesson with **בקשת הזמנה** (order request) next to items marked "צריך להזמין" (to order). Record meetings with the lab or other teams under **פגישות נדרשות על המערך** (meetings needed for the lesson).
+5. The lab prints the equipment checklist from the lesson page. Before a group arrives, check allergies at **בודק אלרגיות** (allergy checker).
 
-Lesson files are stored in the free Firestore database (Firebase Storage needs a paid plan): up to 8 MB per file, the newest 3 versions of each lesson keep their file. 50 lessons × 3 versions × 3 MB ≈ 450 MB of the free 1 GB.
+Lesson files are stored in the free Firestore database (Firebase Storage needs a paid plan): up to 8 MB per file, and the newest 3 versions of each lesson keep their file.
 
-## How to check it's working (30 workers)
-There's **no limit on the number of workers**: 30 is fine, and so is more. Tested with 33 workers, about 100 tasks, and a report sent to all 33.
-
-**Adding your 30 workers:** on **עובדים וצוותים** (workers and teams), open **"+ הוספת כמה עובדים יחד"** (add several workers) and paste one line per worker: `name, email, team`. You can also paste three columns straight from Excel or Google Sheets. If any line has a problem (missing name, invalid email, email already in the system), nothing is saved, the bad lines are listed, and your text stays so you can fix it.
-
-**After going live, check these:**
-1. **Workers page:** the header shows **"עובדים (30 פעילים)"** (30 active), and each worker has a personal link.
-2. **Shared board:** one card per worker (30 cards).
-3. **Send a report:** on **דוחות והגדרות** (reports and settings), click **שליחת דוח** (send report). Within about 10–15 minutes, the **email log** at the bottom of that page shows one **"דוח"** (report) line per worker, 30 in total, each marked **"נשלח"** (sent).
-4. **GitHub → Actions → mailer:** open the latest run. The log shows `report: 30/30 sent`, and quiet runs show `nothing to do (4 reads)`.
-5. **Brevo → Transactional → Logs:** every email shows as delivered. Daily limit on the free plan: 300 emails.
-6. **Be a worker for a minute:** open one worker's personal link (the **פתיחה** (open) button on the Workers page), change a task's status, and check that you get the notice email.
-7. **Firebase console → Firestore → Usage:** reads per day should stay far below the free limit of **50,000**.
-
-**Expected free-plan usage with 30 workers** (measured on test data):
-- one board page load: about 150 reads;
-- one worker page load: about 20 reads;
-- a quiet mailer run: 4 reads (about 600 a day);
-- a report to everyone: about 180 reads.
-
-A busy day comes to roughly 10,000 reads, about 20% of the free limit. Pages load only open tasks and active requests, so the cost doesn't grow as finished work piles up. Emails: 30 report emails plus notifications are well within Brevo's 300 a day.
+## How to check it's working
+1. **מדריכים** (instructors): each one is listed with their email and the lessons they work on.
+2. **Sign in as an instructor:** in a private window, type an instructor's email, then open the link from the email. You should see **המערכים שלי** (my lessons) and the lessons board – and no teams, equipment orders or meetings.
+3. **Send a lesson for review** as that instructor (any PDF). Within about 10–15 minutes you get an email with the file attached and the status report. The lesson page shows "✓ נשלח למייל" (sent by email).
+4. **GitHub → Actions → mailer:** each run shows a green tick; quiet runs say `nothing to do`.
+5. **Brevo → Transactional → Logs:** every email shows as delivered.
+6. **Firebase console → Firestore → Usage:** daily reads stay far below the free limit of 50,000.
 
 ## Good to know
 - **Email timing:** emails go out within about 10–15 minutes. GitHub sometimes starts scheduled runs late at busy times.
 - **Keeping the mailer running:** GitHub pauses scheduled workflows in a repo with **no activity for 60 days**. It emails you first; click **Enable workflow** in the Actions tab to resume. Any commit also resets the 60-day clock.
-- **Privacy:** anyone with the site address can see the shared board (names, task titles, equipment, meetings). Workers' emails and personal links are visible only to the manager.
-- **A leaked personal link:** use **קישור חדש** (new link) on the Workers page; the old link stops working at once.
+- **Privacy:** nothing is visible without signing in. Instructors see lessons and the instructors' names; teams, equipment orders, meetings, emails and lesson files are visible only to the manager.
+- **An instructor leaves:** on **מדריכים**, untick "פעיל/ה" (active) or delete them. They can't sign in any more.
 - **Changing managers:** edit the `ADMIN_EMAILS` secret. The mailer updates access on its next run.
 - **Never** paste the service-account key, SMTP key or passwords into chat, code or issues: only into GitHub secrets.
 

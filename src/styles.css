@@ -175,3 +175,7 @@ a.task-link:hover { color: var(--brand); }
 }
 .print-table td.box { width: 1.6rem; }
 .print-table td.box span { display: inline-block; width: 1rem; height: 1rem; border: 1.5px solid #555; border-radius: 3px; }
+
+.grade-picker { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .75rem; margin: 0; }
+.grade-picker legend { font-weight: 600; padding: 0 .3rem; }
+.tabs { display: flex; gap: .25rem; flex-wrap: wrap; }

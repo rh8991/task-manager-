@@ -1,10 +1,10 @@
 import { HashRouter, Route, Routes } from "react-router";
 import { FlashProvider } from "@/components/Flash";
 import { AdminLayout } from "@/components/AdminLayout";
+import { HomeRedirect, OldPersonalLink, StaffLayout } from "@/components/StaffLayout";
 import { firebaseConfigured } from "@/lib/firebase";
-import { Dashboard } from "@/pages/Dashboard";
-import { Login } from "@/pages/Login";
-import { WorkerPage } from "@/pages/WorkerPage";
+import { Login, LoginLinkHandler } from "@/pages/Login";
+import { InstructorHome } from "@/pages/InstructorHome";
 import { TaskView } from "@/pages/TaskView";
 import { AllergenCheck, LessonPrint, LessonView, LessonsBoard } from "@/pages/LessonPages";
 import { LessonsPage } from "@/pages/admin/Lessons";
@@ -12,15 +12,15 @@ import { LessonDetail } from "@/pages/admin/LessonDetail";
 import { Overview } from "@/pages/admin/Overview";
 import { TasksPage } from "@/pages/admin/Tasks";
 import { TaskDetail } from "@/pages/admin/TaskDetail";
-import { ProjectsPage } from "@/pages/admin/Projects";
-import { WorkersPage } from "@/pages/admin/Workers";
+import { InstructorsPage } from "@/pages/admin/Instructors";
+import { TeamsPage } from "@/pages/admin/Teams";
 import { EquipmentPage } from "@/pages/admin/Equipment";
 import { MeetingsPage } from "@/pages/admin/Meetings";
 import { ReportsPage } from "@/pages/admin/Reports";
 
 /**
- * Hash routes (#/admin, #/w/<token>) so the static site works on GitHub Pages without
- * server-side routing, and the personal token in the URL is never sent to any server.
+ * Hash routes (#/me, #/admin/…) so the static site works on GitHub Pages without server-side
+ * routing. Everything needs signing in: the manager (#/admin) or an instructor (#/me).
  */
 export function App() {
   if (!firebaseConfigured) {
@@ -35,31 +35,36 @@ export function App() {
   }
   return (
     <FlashProvider>
-      <HashRouter>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/w/:token" element={<WorkerPage />} />
-          <Route path="/task/:id" element={<TaskView />} />
-          <Route path="/lessons" element={<LessonsBoard />} />
-          <Route path="/lesson/:id" element={<LessonView />} />
-          <Route path="/lesson/:id/print" element={<LessonPrint />} />
-          <Route path="/allergens" element={<AllergenCheck />} />
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Overview />} />
-            <Route path="lessons" element={<LessonsPage />} />
-            <Route path="lessons/:id" element={<LessonDetail />} />
-            <Route path="tasks" element={<TasksPage />} />
-            <Route path="tasks/:id" element={<TaskDetail />} />
-            <Route path="projects" element={<ProjectsPage />} />
-            <Route path="workers" element={<WorkersPage />} />
-            <Route path="equipment" element={<EquipmentPage />} />
-            <Route path="meetings" element={<MeetingsPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-          </Route>
-          <Route path="*" element={<main className="container"><h1>הדף לא נמצא</h1><a href="#/">ללוח המשותף</a></main>} />
-        </Routes>
-      </HashRouter>
+      <LoginLinkHandler>
+        <HashRouter>
+          <Routes>
+            <Route path="/" element={<HomeRedirect />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/w/:token" element={<OldPersonalLink />} />
+            <Route element={<StaffLayout />}>
+              <Route path="/me" element={<InstructorHome />} />
+              <Route path="/task/:id" element={<TaskView />} />
+              <Route path="/lessons" element={<LessonsBoard />} />
+              <Route path="/lesson/:id" element={<LessonView />} />
+              <Route path="/allergens" element={<AllergenCheck />} />
+            </Route>
+            <Route path="/lesson/:id/print" element={<LessonPrint />} />
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Overview />} />
+              <Route path="lessons" element={<LessonsPage />} />
+              <Route path="lessons/:id" element={<LessonDetail />} />
+              <Route path="instructors" element={<InstructorsPage />} />
+              <Route path="teams" element={<TeamsPage />} />
+              <Route path="tasks" element={<TasksPage />} />
+              <Route path="tasks/:id" element={<TaskDetail />} />
+              <Route path="equipment" element={<EquipmentPage />} />
+              <Route path="meetings" element={<MeetingsPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+            </Route>
+            <Route path="*" element={<main className="container"><h1>הדף לא נמצא</h1><a href="#/">לדף הבית</a></main>} />
+          </Routes>
+        </HashRouter>
+      </LoginLinkHandler>
     </FlashProvider>
   );
 }

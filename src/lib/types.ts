@@ -16,13 +16,20 @@ export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 /** Every document read from Firestore carries its id. */
 export type WithId<T> = T & { id: string };
 
-export type Team = { name: string; createdAt: number };
+/** Another department (lab, maintenance…). Manager only: instructors never see teams. */
+export type Team = { name: string; contactName?: string | null; contactEmail?: string | null; notes?: string | null; createdAt: number };
 
 /** Public part of a worker (shown on the shared board). */
 export type Worker = { name: string; teamId: string | null; active: boolean; createdAt: number };
 
 /** Private part of a worker: only the manager (and the mailer) can read it. */
-export type WorkerPrivate = { email: string; token: string };
+export type WorkerPrivate = { email: string; token?: string };
+
+/**
+ * members/{email}: who may sign in as an instructor (email-link sign-in). The manager creates it
+ * together with the worker. Rules use it to know which worker a signed-in email belongs to.
+ */
+export type Member = { workerId: string; active: boolean };
 
 /** workerLinks/{token}: lets a personal link find its worker without exposing other tokens. */
 export type WorkerLink = { workerId: string };
@@ -105,6 +112,8 @@ export type MeetingRequest = {
   neededBy: string | null;
   status: MeetingStatus;
   withTeamId: string | null;
+  /** Lesson the meeting is about (null = general). */
+  lessonId?: string | null;
   requesterId: string | null;
   proofId: string | null;
   createdAt: number;
@@ -121,7 +130,8 @@ export type OutboxItem =
   | { type: "test" }
   | { type: "lesson-submitted"; lessonId: string; submissionId: string; proofId?: string }
   | { type: "lesson-decision"; lessonId: string; submissionId: string }
-  | { type: "lesson-assigned"; lessonId: string; workerIds: string[] };
+  | { type: "lesson-assigned"; lessonId: string; workerIds: string[] }
+  | { type: "instructor-welcome"; workerId: string };
 
 export type OutboxDoc = OutboxItem & {
   status: "pending" | "sending" | "sent" | "failed";
@@ -202,8 +212,11 @@ export type LessonItem = {
 export type Lesson = {
   title: string;
   subject: Subject;
-  gradeFrom: number; // 1 = א … 12 = יב
-  gradeTo: number;
+  /** Grades the lesson is for: 1 = א … 12 = יב (elementary per grade; middle / high as whole stages). */
+  grades: number[];
+  /** Older lessons stored a range instead of `grades`. */
+  gradeFrom?: number;
+  gradeTo?: number;
   location: LessonLocation;
   durationMin: number;
   kind: LessonKind;
@@ -242,6 +255,8 @@ export type LessonSubmission = {
   decision: "APPROVED" | "CHANGES_REQUESTED" | null;
   decisionNotes: string | null;
   decidedAt: number | null;
+  /** Status report written by the instructor when sending. */
+  report?: { done: string | null; next: string | null; blockers: string | null } | null;
   proofId: string | null;
 };
 

@@ -5,7 +5,7 @@ import { UserError } from "./actions";
 
 /**
  * Upload / download lesson files stored as chunks in Firestore.
- * `startBatch` lets the worker version add a fresh "proof" to every batch (see firestore.rules).
+ * `startBatch` returns a new write batch for each group of chunks.
  */
 export type BatchStarter = () => { b: WriteBatch; proofId: string | null };
 

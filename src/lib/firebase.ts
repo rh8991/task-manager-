@@ -10,6 +10,7 @@ const env = import.meta.env;
 const useEmulators = env.VITE_USE_EMULATORS === "true";
 
 export const firebaseConfigured = useEmulators || !!env.VITE_FIREBASE_PROJECT_ID;
+export const usingEmulators = useEmulators;
 
 const app = initializeApp({
   apiKey: env.VITE_FIREBASE_API_KEY || "demo-key",

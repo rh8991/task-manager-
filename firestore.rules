@@ -2,22 +2,40 @@ rules_version = '2';
 
 // Security model (there is no server: these rules ARE the access control).
 //
-// - The manager signs in with Firebase Auth. A user is a manager when admins/{uid} exists;
-//   that collection is written only by the mailer job (Admin SDK) from the ADMIN_EMAILS secret.
-// - The shared board is public: teams, workers' names, projects, tasks, equipment and meetings
-//   can be read by anyone. Workers' emails and personal-link tokens live in workerPrivate,
-//   which only the manager can read.
-// - Workers don't log in. Their personal link holds a secret token. To change something, the
-//   worker page writes, in ONE batch, a new proofs/{id} doc {token, workerId} together with the
-//   change, which points to it with proofId. The rules check that the proof is created in this
-//   very request (so an old proof id can't be replayed) and that the token belongs to that
-//   worker. Proofs can't be read, so tokens never become public.
+// Two kinds of users, both signed in with Firebase Auth:
+// - Manager: admins/{uid} exists. That collection is written only by the mailer job (Admin SDK)
+//   from the ADMIN_EMAILS secret. The manager can do everything.
+// - Instructor (מדריך/ה): signs in with an email link; members/{email} exists and is active.
+//   The manager creates it when adding the instructor. Instructors see the lessons and who works
+//   on them, and their own tasks. They never see other teams, equipment orders, meetings or
+//   settings, and they can't delete anything.
+// Nothing is readable without signing in.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function isAdmin() {
       return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function myEmail() {
+      return request.auth.token.email;
+    }
+
+    function isInstructor() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string
+        && exists(/databases/$(database)/documents/members/$(myEmail()))
+        && get(/databases/$(database)/documents/members/$(myEmail())).data.active == true;
+    }
+
+    function myWorkerId() {
+      return get(/databases/$(database)/documents/members/$(myEmail())).data.workerId;
+    }
+
+    function staff() {
+      return isAdmin() || isInstructor();
     }
 
     function optString(v, max) {
@@ -28,38 +46,37 @@ service cloud.firestore {
       return v == null || (v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
     }
 
-    // True when proofs/{proofId} is created by this same request, for an active worker whose
-    // personal-link token matches.
-    function freshProof(proofId, workerId) {
-      let proof = getAfter(/databases/$(database)/documents/proofs/$(proofId)).data;
-      return proofId is string
-        && !exists(/databases/$(database)/documents/proofs/$(proofId))
-        && existsAfter(/databases/$(database)/documents/proofs/$(proofId))
-        && proof.workerId == workerId
-        && get(/databases/$(database)/documents/workerLinks/$(proof.token)).data.workerId == workerId
-        && get(/databases/$(database)/documents/workers/$(workerId)).data.active == true;
+    // The signed-in instructor works on this lesson.
+    function ownsLesson(lessonId) {
+      return isInstructor()
+        && myWorkerId() in get(/databases/$(database)/documents/lessons/$(lessonId)).data.ownerIds;
     }
 
-    // A fresh proof by a worker who is one of the lesson's instructors (ownerIds).
-    function ownerProof(proofId, ownerIds) {
-      let w = getAfter(/databases/$(database)/documents/proofs/$(proofId)).data.workerId;
-      return proofId is string && w in ownerIds && freshProof(proofId, w);
-    }
-
-    function lessonOwners(lessonId) {
-      return get(/databases/$(database)/documents/lessons/$(lessonId)).data.ownerIds;
-    }
-
-    function proofWorker(proofId) {
-      return getAfter(/databases/$(database)/documents/proofs/$(proofId)).data.workerId;
-    }
-
-    // ---------------------------------------------------------------- manager-only
+    // ---------------------------------------------------------------- who is who
 
     match /admins/{uid} {
       allow get: if request.auth != null && request.auth.uid == uid;
       allow list, write: if false;
     }
+
+    // members/{email}: an instructor may read only their own entry.
+    match /members/{email} {
+      allow get: if isAdmin() || (request.auth != null && request.auth.token.email == email);
+      allow list, write: if isAdmin();
+    }
+
+    // "Send me a sign-in link" when Firebase's own daily email quota is used up. The mailer job
+    // sends the link. Only for emails of active instructors; nobody can read these.
+    match /loginRequests/{email} {
+      allow read, delete: if false;
+      allow create, update: if request.resource.data.keys().hasOnly(['email', 'createdAt'])
+        && request.resource.data.email == email
+        && request.resource.data.createdAt is int
+        && exists(/databases/$(database)/documents/members/$(email))
+        && get(/databases/$(database)/documents/members/$(email)).data.active == true;
+    }
+
+    // ---------------------------------------------------------------- manager only
 
     match /settings/{doc} {
       allow read, write: if isAdmin();
@@ -74,148 +91,124 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // A personal link can look up its own worker, but nobody can list the tokens.
-    match /workerLinks/{token} {
-      allow get: if true;
-      allow list: if false;
-      allow write: if isAdmin();
-    }
-
-    match /proofs/{proofId} {
-      allow read: if false;
-      allow update, delete: if false;
-      allow create: if request.resource.data.keys().hasOnly(['token', 'workerId', 'createdAt'])
-        && request.resource.data.token is string
-        && request.resource.data.workerId is string
-        && request.resource.data.createdAt is int
-        && get(/databases/$(database)/documents/workerLinks/$(request.resource.data.token)).data.workerId == request.resource.data.workerId;
-    }
-
-    // ---------------------------------------------------------------- public read, manager write
-
     match /teams/{id} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /workers/{id} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isAdmin();
     }
 
     match /projects/{id} {
-      allow read: if true;
+      allow read, write: if isAdmin();
+    }
+
+    match /equipment/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Meetings with other teams are the manager's. An instructor may only *ask* for one about
+    // a lesson they work on (it then shows up for the manager).
+    match /meetings/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isAdmin() || (
+        request.resource.data.keys().hasOnly(['topic', 'notes', 'neededBy', 'status', 'withTeamId', 'lessonId', 'requesterId', 'proofId', 'createdAt', 'updatedAt'])
+        && request.resource.data.status == 'OPEN'
+        && request.resource.data.withTeamId == null
+        && request.resource.data.topic is string && request.resource.data.topic.size() > 0 && request.resource.data.topic.size() <= 200
+        && optString(request.resource.data.notes, 2000)
+        && optDate(request.resource.data.neededBy)
+        && request.resource.data.requesterId == myWorkerId()
+        && ownsLesson(request.resource.data.lessonId)
+      );
+    }
+
+    // Emails waiting for the mailer job. Instructors may only queue a notice to the manager,
+    // or the "lesson sent for review" email of a lesson they work on.
+    match /outbox/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isAdmin() || (
+        isInstructor()
+        && request.resource.data.keys().hasOnly(['type', 'subject', 'lines', 'path', 'status', 'createdAt'])
+        && request.resource.data.type == 'manager-notice'
+        && request.resource.data.status == 'pending'
+        && request.resource.data.subject is string && request.resource.data.subject.size() <= 300
+        && request.resource.data.lines is list && request.resource.data.lines.size() <= 12
+        && request.resource.data.path is string && request.resource.data.path.size() <= 200
+      ) || (
+        request.resource.data.keys().hasOnly(['type', 'lessonId', 'submissionId', 'status', 'createdAt'])
+        && request.resource.data.type == 'lesson-submitted'
+        && request.resource.data.status == 'pending'
+        && ownsLesson(request.resource.data.lessonId)
+      );
+    }
+
+    // ---------------------------------------------------------------- staff (manager + instructors)
+
+    // Names of the instructors (emails are in workerPrivate, manager only).
+    match /workers/{id} {
+      allow read: if staff();
       allow write: if isAdmin();
     }
 
-    // ---------------------------------------------------------------- worker writes with proof
-
+    // An instructor sees only their own tasks, and may change only the status / comment.
     match /tasks/{taskId} {
-      allow read: if true;
+      allow read: if isAdmin() || (isInstructor() && resource.data.assigneeId == myWorkerId());
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (
-        resource.data.assigneeId is string
+        isInstructor()
+        && resource.data.assigneeId == myWorkerId()
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'completedAt', 'lastComment', 'lastProofId', 'updatedAt'])
+             .hasOnly(['status', 'completedAt', 'lastComment', 'updatedAt'])
         && request.resource.data.status in ['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE']
         && optString(request.resource.data.lastComment, 1000)
-        && freshProof(request.resource.data.lastProofId, resource.data.assigneeId)
       );
     }
 
     match /taskUpdates/{id} {
-      allow read: if true;
-      allow update, delete: if isAdmin();
-      allow create: if isAdmin() || (
-        request.resource.data.keys().hasOnly(['taskId', 'workerId', 'oldStatus', 'newStatus', 'comment', 'proofId', 'createdAt'])
-        && request.resource.data.workerId is string
-        && optString(request.resource.data.comment, 1000)
-        && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assigneeId == request.resource.data.workerId
-        && freshProof(request.resource.data.proofId, request.resource.data.workerId)
-      );
-    }
-
-    match /equipment/{id} {
-      allow read: if true;
-      allow update, delete: if isAdmin();
-      allow create: if isAdmin() || (
-        request.resource.data.keys().hasOnly(['item', 'quantity', 'link', 'estCost', 'notes', 'neededBy', 'status',
-          'managerNote', 'requesterId', 'projectId', 'proofId', 'approvedAt', 'orderedAt', 'receivedAt', 'createdAt', 'updatedAt'])
-        && request.resource.data.status == 'PENDING'
-        && request.resource.data.item is string && request.resource.data.item.size() > 0 && request.resource.data.item.size() <= 200
-        && request.resource.data.quantity is int && request.resource.data.quantity >= 1 && request.resource.data.quantity <= 10000
-        && (request.resource.data.estCost == null || request.resource.data.estCost is number)
-        && optString(request.resource.data.link, 500)
-        && optString(request.resource.data.notes, 2000)
-        && optDate(request.resource.data.neededBy)
-        && request.resource.data.managerNote == null
-        && request.resource.data.approvedAt == null
-        && request.resource.data.orderedAt == null
-        && request.resource.data.receivedAt == null
-        && freshProof(request.resource.data.proofId, request.resource.data.requesterId)
-      );
-    }
-
-    match /meetings/{id} {
-      allow read: if true;
-      allow update, delete: if isAdmin();
-      allow create: if isAdmin() || (
-        request.resource.data.keys().hasOnly(['topic', 'notes', 'neededBy', 'status', 'withTeamId', 'requesterId', 'proofId', 'createdAt', 'updatedAt'])
-        && request.resource.data.status == 'OPEN'
-        && request.resource.data.topic is string && request.resource.data.topic.size() > 0 && request.resource.data.topic.size() <= 200
-        && optString(request.resource.data.notes, 2000)
-        && optDate(request.resource.data.neededBy)
-        && freshProof(request.resource.data.proofId, request.resource.data.requesterId)
-      );
-    }
-
-    // Emails waiting to be sent by the mailer job. Workers may only queue a notice to the manager.
-    match /outbox/{id} {
       allow read, update, delete: if isAdmin();
       allow create: if isAdmin() || (
-        request.resource.data.keys().hasOnly(['type', 'subject', 'lines', 'path', 'proofId', 'status', 'createdAt'])
-        && request.resource.data.type == 'manager-notice'
-        && request.resource.data.status == 'pending'
-        && request.resource.data.subject is string && request.resource.data.subject.size() <= 300
-        && request.resource.data.lines is list && request.resource.data.lines.size() <= 10
-        && request.resource.data.path is string && request.resource.data.path.size() <= 200
-        && freshProof(request.resource.data.proofId, getAfter(/databases/$(database)/documents/proofs/$(request.resource.data.proofId)).data.workerId)
-      ) || (
-        request.resource.data.keys().hasOnly(['type', 'lessonId', 'submissionId', 'proofId', 'status', 'createdAt'])
-        && request.resource.data.type == 'lesson-submitted'
-        && request.resource.data.status == 'pending'
-        && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
+        isInstructor()
+        && request.resource.data.keys().hasOnly(['taskId', 'workerId', 'oldStatus', 'newStatus', 'comment', 'proofId', 'createdAt'])
+        && request.resource.data.workerId == myWorkerId()
+        && optString(request.resource.data.comment, 1000)
+        && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assigneeId == myWorkerId()
       );
     }
 
     // ---------------------------------------------------------------- lessons (מערכים)
 
-    // Public read. An instructor of the lesson may edit only the equipment list, the parts of the
-    // lesson and safety notes, start working on it, and submit it (status SUBMITTED, version + 1).
+    // Every instructor can see all lessons. An instructor of the lesson may edit the equipment
+    // list, the parts of the lesson and safety, set the status to "idea" / "in progress", and
+    // send it for review (status SUBMITTED together with version + 1). No deleting.
     match /lessons/{lessonId} {
-      allow read: if true;
+      allow read: if staff();
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['equipment', 'activities', 'safety', 'status', 'version', 'lastSubmittedAt', 'lastProofId', 'updatedAt'])
-        && request.resource.data.status in ['IN_PROGRESS', 'SUBMITTED']
-        && (request.resource.data.status == resource.data.status
-            || resource.data.status in ['IDEA', 'IN_PROGRESS', 'CHANGES_REQUESTED'])
+        isInstructor()
+        && myWorkerId() in resource.data.ownerIds
+        && resource.data.status in ['IDEA', 'IN_PROGRESS', 'SUBMITTED', 'CHANGES_REQUESTED']
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['equipment', 'activities', 'safety', 'status', 'version', 'lastSubmittedAt', 'updatedAt'])
         && request.resource.data.equipment is list && request.resource.data.equipment.size() <= 200
         && request.resource.data.activities is list && request.resource.data.activities.size() <= 50
         && request.resource.data.safety is list && request.resource.data.safety.size() <= 20
-        && (request.resource.data.version == resource.data.version
-            || (request.resource.data.version == resource.data.version + 1 && request.resource.data.status == 'SUBMITTED'))
-        && ownerProof(request.resource.data.lastProofId, resource.data.ownerIds)
+        && (
+          // unchanged status, or idea <-> in progress (also back to work after "returned")
+          (request.resource.data.status == resource.data.status
+             && request.resource.data.version == resource.data.version)
+          || (request.resource.data.status in ['IDEA', 'IN_PROGRESS']
+             && resource.data.status in ['IDEA', 'IN_PROGRESS', 'CHANGES_REQUESTED']
+             && request.resource.data.version == resource.data.version)
+          // sending for review: only together with a new version
+          || (request.resource.data.status == 'SUBMITTED'
+             && request.resource.data.version == resource.data.version + 1)
+        )
       );
     }
 
-    // Each time a lesson file is sent for review. Public read (no file content).
+    // Each time a lesson file is sent for review (no file content here).
     match /lessonSubmissions/{id} {
-      allow read: if true;
+      allow read: if staff();
       allow update, delete: if isAdmin();
       allow create: if isAdmin() || (
-        request.resource.data.keys().hasOnly(['lessonId', 'version', 'fileId', 'fileName', 'fileSize', 'note', 'submittedBy',
+        request.resource.data.keys().hasOnly(['lessonId', 'version', 'fileId', 'fileName', 'fileSize', 'note', 'report', 'submittedBy',
           'submittedAt', 'emailStatus', 'emailAt', 'emailError', 'decision', 'decisionNotes', 'decidedAt', 'proofId'])
         && request.resource.data.emailStatus == 'pending'
         && request.resource.data.decision == null
@@ -224,8 +217,8 @@ service cloud.firestore {
         && request.resource.data.emailAt == null
         && request.resource.data.emailError == null
         && optString(request.resource.data.note, 2000)
-        && request.resource.data.submittedBy == proofWorker(request.resource.data.proofId)
-        && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
+        && ownsLesson(request.resource.data.lessonId)
+        && request.resource.data.submittedBy == myWorkerId()
       );
     }
 
@@ -238,8 +231,8 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() <= 200
         && request.resource.data.size is int && request.resource.data.size > 0 && request.resource.data.size <= 8388608
         && request.resource.data.chunkCount is int && request.resource.data.chunkCount <= 10
-        && request.resource.data.uploadedBy == proofWorker(request.resource.data.proofId)
-        && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
+        && ownsLesson(request.resource.data.lessonId)
+        && request.resource.data.uploadedBy == myWorkerId()
       );
 
       match /chunks/{n} {
@@ -248,7 +241,7 @@ service cloud.firestore {
           request.resource.data.keys().hasOnly(['data', 'n', 'lessonId', 'proofId'])
           && request.resource.data.data is bytes && request.resource.data.data.size() <= 972800
           && getAfter(/databases/$(database)/documents/lessonFiles/$(fileId)).data.lessonId == request.resource.data.lessonId
-          && ownerProof(request.resource.data.proofId, lessonOwners(request.resource.data.lessonId))
+          && ownsLesson(request.resource.data.lessonId)
         );
       }
     }

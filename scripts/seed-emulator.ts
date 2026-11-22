@@ -34,90 +34,32 @@ async function main() {
     auth.createUser({ email: "manager@example.com", password: "manager123", displayName: "המנהל" }),
   );
 
+  // Other teams the manager works with (manager only).
   const teamIds: Record<string, string> = {};
-  // Departments of the science program (+ operations).
-  for (const name of ["מדריכים", "מעבדה", "אחזקה", "תפעול"]) {
-    teamIds[name] = (await db.collection("teams").add({ name, createdAt: now })).id;
+  const teamInfo: [string, string, string, string][] = [
+    ["מעבדה", "רונית (רכזת מעבדה)", "lab@example.com", "מרכזים, מסדרים ומזמינים ציוד. הזמנות עד יום ג׳ לשבוע הבא."],
+    ["אחזקה", "משה", "maintenance@example.com", "טיפול טכני ולוגיסטי שלא קשור למעבדה."],
+    ["תפעול", "שרית", "ops@example.com", "תיאום קבוצות ולוחות זמנים."],
+  ];
+  for (const [name, contactName, contactEmail, notes] of teamInfo) {
+    teamIds[name] = (await db.collection("teams").add({ name, contactName, contactEmail, notes, createdAt: now })).id;
   }
 
-  // 30 workers across 4 teams (the size of the real team).
-  const first = ["דנה", "יוסי", "מיכל", "אבי", "נועה", "עומר", "שירה", "איתי", "טל", "רוני", "ליאור", "גל", "מאיה", "עידו", "הילה",
-    "אורי", "יעל", "נדב", "תמר", "אלון", "רותם", "שי", "ענבל", "דור", "נוי", "אסף", "קרן", "בן", "ליה", "עמית"];
-  const last = ["כהן", "לוי", "אברהם", "מזרחי", "פרץ", "ביטון", "דהן", "אזולאי", "פרידמן", "שפירא"];
-  const teamNames = Object.keys(teamIds);
-  const people: [string, string, string][] = first.map((f, i) => [`${f} ${last[i % last.length]}`, `worker${i + 1}@example.com`, teamNames[i % teamNames.length]]);
-  people[0][1] = "dana@example.com"; // used by the browser test
-  const w: Record<string, string> = {};
+  // The manager's team of instructors. Each one can sign in with an email link (members/{email}).
+  const names = ["דנה כהן", "יוסי לוי", "מיכל אברהם", "אבי מזרחי", "נועה פרץ", "עומר ביטון", "שירה דהן", "איתי אזולאי", "טל פרידמן", "רוני שפירא", "ליאור כהן", "גל לוי"];
   const ids: string[] = [];
-  for (const [name, email, team] of people) {
+  for (const [i, name] of names.entries()) {
+    const email = i === 0 ? "dana@example.com" : i === 1 ? "yossi@example.com" : `instructor${i + 1}@example.com`;
     const ref = db.collection("workers").doc();
-    const t = token();
-    await ref.set({ name, teamId: teamIds[team], active: true, createdAt: now });
-    await db.doc(`workerPrivate/${ref.id}`).set({ email, token: t });
-    await db.doc(`workerLinks/${t}`).set({ workerId: ref.id });
-    w[name] = ref.id;
+    await ref.set({ name, teamId: null, active: true, createdAt: now });
+    await db.doc(`workerPrivate/${ref.id}`).set({ email });
+    await db.doc(`members/${email}`).set({ workerId: ref.id, active: true });
     ids.push(ref.id);
   }
-  console.log(`${ids.length} workers. First worker (${people[0][0]}): #/w/${(await db.doc(`workerPrivate/${ids[0]}`).get()).get("token")}`);
+  console.log(`${ids.length} instructors (sign in as dana@example.com or yossi@example.com)`);
 
-  const site = (await db.collection("projects").add({ name: "אתר חדש", description: "השקת אתר החברה החדש", dueDate: day(30), active: true, createdAt: now })).id;
-  const office = (await db.collection("projects").add({ name: "מעבר משרד", description: "מעבר לקומה 3", dueDate: day(45), active: true, createdAt: now })).id;
-
-  const base = { reviews: [] as object[], remindedReviewIds: [] as string[], description: null, completedAt: null, lastComment: null, lastProofId: null, reminderSentAt: null, createdAt: now, updatedAt: now };
-  const tasks = [
-    { title: "עיצוב דף הבית", assigneeId: ids[0], projectId: site, status: "IN_PROGRESS", priority: "HIGH", dueDate: day(2) },
-    { title: "חיבור טופס צור קשר", assigneeId: ids[1], projectId: site, status: "TODO", priority: "MEDIUM", dueDate: day(1) },
-    { title: "בדיקות נגישות", assigneeId: ids[1], projectId: site, status: "TODO", priority: "LOW", dueDate: day(12) },
-    { title: "תיקון באג בהתחברות", assigneeId: ids[0], projectId: null, status: "BLOCKED", priority: "URGENT", dueDate: day(-2) },
-    { title: "תכנון חלוקת עמדות", assigneeId: ids[2], projectId: office, status: "IN_PROGRESS", priority: "MEDIUM", dueDate: day(5) },
-    { title: "תיאום חברת הובלה", assigneeId: ids[3], projectId: office, status: "TODO", priority: "HIGH", dueDate: day(-1) },
-    { title: "קמפיין השקה", assigneeId: ids[4], projectId: site, status: "TODO", priority: "MEDIUM", dueDate: day(20) },
-    { title: "הצעות מחיר לריהוט", assigneeId: ids[5], projectId: office, status: "IN_PROGRESS", priority: "MEDIUM", dueDate: null },
-    { title: "עדכון נהלי עבודה", assigneeId: null, projectId: null, status: "TODO", priority: "MEDIUM", dueDate: null },
-    { title: "הגדרת דומיין", assigneeId: ids[1], projectId: site, status: "DONE", priority: "MEDIUM", dueDate: null, completedAt: now },
-  ];
-  // ~3 more tasks per worker: a mix of statuses and due dates (some overdue, some done).
-  const kinds = ["הכנת דוח חודשי", "בדיקת ציוד", "עדכון מסמכים", "פגישת לקוח", "סידור מחסן", "הדרכת עובד חדש"];
-  const statuses = ["TODO", "IN_PROGRESS", "TODO", "BLOCKED", "DONE", "IN_PROGRESS"] as const;
-  ids.forEach((id, i) => {
-    for (let k = 0; k < 3; k++) {
-      const n = i * 3 + k;
-      const status = statuses[n % statuses.length];
-      tasks.push({
-        title: `${kinds[n % kinds.length]} #${n + 1}`,
-        assigneeId: id,
-        projectId: n % 3 === 0 ? site : n % 3 === 1 ? office : null,
-        status,
-        priority: (["LOW", "MEDIUM", "HIGH", "URGENT"] as const)[n % 4],
-        dueDate: n % 5 === 4 ? null : day((n % 9) - 3),
-        ...(status === "DONE" ? { completedAt: now - (n % 10) * 864e5 } : {}),
-      } as (typeof tasks)[number]);
-    }
-  });
-  // Review dates on the way to the due date: on the first task, plus every 4th task with a due date.
-  const rv = (id: string, date: string, note: string, done = false) => ({ id, date, note, done, doneAt: done ? now : null });
-  const withReviews = tasks.map((t, n) => {
-    if (n === 0) return { ...t, dueDate: day(10), reviews: [rv("r1", day(-1), "סקיצות ראשונות", true), rv("r2", day(1), "טיוטה לבדיקת מנהל"), rv("r3", day(6), "גרסה סופית לאישור")] };
-    if (t.dueDate && n % 4 === 0 && t.status !== "DONE") return { ...t, reviews: [rv(`r${n}`, addDays(t.dueDate, -2), "בדיקת התקדמות")] };
-    return t;
-  });
-  const batch = db.batch();
-  for (const t of withReviews) batch.set(db.collection("tasks").doc(), { ...base, ...t });
-  await batch.commit();
-  console.log(`${tasks.length} tasks`);
-
-  const eq = { link: null, notes: null, neededBy: null, managerNote: null, projectId: null, proofId: null, approvedAt: null, orderedAt: null, receivedAt: null, createdAt: now, updatedAt: now, estCost: null };
-  const items = [
-    { item: "מסך 27 אינץ'", quantity: 2, estCost: 1400, requesterId: ids[0], projectId: site, status: "PENDING", notes: "לעמדת העיצוב" },
-    { item: "מקלדת ועכבר אלחוטיים", quantity: 1, estCost: 250, requesterId: ids[1], status: "APPROVED", approvedAt: now, neededBy: day(7) },
-    { item: "ארגזי מעבר", quantity: 40, estCost: 600, requesterId: ids[3], projectId: office, status: "APPROVED", approvedAt: now, neededBy: day(10) },
-    { item: "מדפסת לייזר", quantity: 1, estCost: 1200, requesterId: ids[2], projectId: office, status: "ORDERED", orderedAt: now },
-  ];
-  for (const e of items) await db.collection("equipment").add({ ...eq, ...e });
-
-  const mt = { notes: null, neededBy: null, proofId: null, createdAt: now, updatedAt: now, status: "OPEN" };
-  await db.collection("meetings").add({ ...mt, topic: "תיאום ציוד למערכים חדשים", requesterId: ids[0], withTeamId: teamIds["מעבדה"], neededBy: day(4) });
-  await db.collection("meetings").add({ ...mt, topic: "תקציב ציוד מעבדה", requesterId: ids[2], withTeamId: teamIds["תפעול"], status: "SCHEDULED" });
+  const base = { reviews: [] as object[], remindedReviewIds: [] as string[], description: null, completedAt: null, lastComment: null, lastProofId: null, reminderSentAt: null, createdAt: now, updatedAt: now, projectId: null };
+  void token;
 
   // ---------------------------------------------------------------- lessons (מערכים)
   let n = 0;
@@ -139,7 +81,7 @@ async function main() {
 
   // From the example file "המרות אנרגיה – חט"ב".
   await addLesson("energy", {
-    title: 'המרות אנרגיה – חט"ב', subject: "PHYSICS", kind: "RENOVATION", gradeFrom: 7, gradeTo: 9, ownerIds: [ids[0], ids[4]],
+    title: 'המרות אנרגיה – חט"ב', subject: "PHYSICS", kind: "RENOVATION", grades: [7, 8, 9], ownerIds: [ids[0], ids[4]],
     status: "IN_PROGRESS", dueDate: day(14),
     goals: "הכרת סוגי אנרגיה שונים. הבנת חוק שימור האנרגיה. מושגים: מקורות אנרגיה, גלגולי אנרגיה, זרם חשמלי, תגובה פולטת חום.",
     reviews: [lrv(day(-6), "רשימת ציוד מעודכנת", true), lrv(day(1), "טיוטה מלאה לבדיקת מנהלת"), lrv(day(10), "הרצה ניסיונית במעבדה")],
@@ -160,7 +102,7 @@ async function main() {
   });
   // A food lesson, already sent for review.
   await addLesson("kitchen", {
-    title: "כימיה במטבח – יסודי", subject: "CHEMISTRY", kind: "NEW", gradeFrom: 2, gradeTo: 4, ownerIds: [ids[2]], status: "SUBMITTED",
+    title: "כימיה במטבח – יסודי", subject: "CHEMISTRY", kind: "NEW", grades: [2, 3, 4], location: "MUSEUM", ownerIds: [ids[2]], status: "SUBMITTED",
     dueDate: day(5), version: 1, lastSubmittedAt: now - 3600_000,
     activities: [act("HANDS_ON", "אינדיקטור כרוב סגול"), act("HANDS_ON", "הר געש מסודה וחומץ"), act("DEMO", "עוגה בכוס – מה התפיח אותה?")],
     equipment: [
@@ -172,17 +114,17 @@ async function main() {
     safety: ["GLOVES"],
   });
   await addLesson("slime", {
-    title: "פולימרים ורפש", subject: "CHEMISTRY", kind: "RENOVATION", gradeFrom: 4, gradeTo: 6, ownerIds: [ids[1]], status: "CHANGES_REQUESTED",
+    title: "פולימרים ורפש", subject: "CHEMISTRY", kind: "RENOVATION", grades: [4, 5, 6], ownerIds: [ids[1]], status: "CHANGES_REQUESTED",
     dueDate: day(9), version: 1, lastSubmittedAt: now - 3 * 864e5, managerNotes: "להוסיף הנחיות בטיחות לבורקס ולקצר את הפתיחה ל-10 דקות.",
     equipment: [it("דבק PVA", "בקבוק", { for: "PER_GROUP" }), it("בורקס", "כפית", { hazards: ["TOXIC"] }), it("צבע מאכל", "3 צבעים", { food: true, noKnownAllergens: true })],
   });
-  await addLesson("static", { title: "חשמל סטטי", subject: "PHYSICS", kind: "NEW", gradeFrom: 3, gradeTo: 5, ownerIds: [ids[6]], status: "IDEA", dueDate: day(-3) });
+  await addLesson("static", { title: "חשמל סטטי", subject: "PHYSICS", kind: "NEW", grades: [3, 4, 5], location: "MUSEUM", ownerIds: [ids[6]], status: "IDEA", dueDate: day(-3) });
   await addLesson("cells", {
-    title: "מיקרוסקופיה – תאים", subject: "BIOLOGY", kind: "NEW", gradeFrom: 5, gradeTo: 6, ownerIds: [ids[8]], status: "ACTIVE", location: "MUSEUM",
+    title: "מיקרוסקופיה – תאים", subject: "BIOLOGY", kind: "NEW", grades: [5, 6], ownerIds: [ids[8]], status: "ACTIVE", location: "MUSEUM",
     equipment: [it("מיקרוסקופים", "10", { for: "PER_GROUP", hazards: ["ELECTRIC"] }), it("בצל", "2", { food: true, noKnownAllergens: true }), it("זכוכיות נושא", "30", { hazards: ["SHARP"] })],
   });
   await addLesson("dna", {
-    title: "הפקת DNA מתותים", subject: "BIOLOGY", kind: "NEW", gradeFrom: 9, gradeTo: 12, ownerIds: [ids[10]], status: "APPROVED", version: 2,
+    title: "הפקת DNA מתותים", subject: "BIOLOGY", kind: "NEW", grades: [10, 11, 12], ownerIds: [ids[10]], status: "APPROVED", version: 2,
     equipment: [it("תותים", "קופסה", { food: true, noKnownAllergens: true }), it("סבון כלים", "בקבוק"), it("אלכוהול 70% קר", "200 מ\"ל", { hazards: ["FLAMMABLE"] })],
     safety: ["GOGGLES", "EXTINGUISHER"],
   });
@@ -201,6 +143,18 @@ async function main() {
   await db.collection("tasks").add({ ...tb, title: "צילום סרטונים למוצגים בפארק", assigneeId: ids[3], projectId: null, dueDate: day(12) });
   await db.collection("tasks").add({ ...tb, title: "תיקון מנדף במעבדה 2", assigneeId: null, projectId: null, teamId: teamIds["אחזקה"], priority: "HIGH", dueDate: day(3) });
   await db.collection("tasks").add({ ...tb, title: "להזמין פסי מגנזיום", assigneeId: null, projectId: null, teamId: teamIds["מעבדה"], lessonId: lessons.energy, dueDate: day(6) });
+  await db.collection("tasks").add({ ...tb, title: "הרצה ניסיונית של התחרות", assigneeId: ids[0], lessonId: lessons.energy, status: "IN_PROGRESS", dueDate: day(2) });
+  await db.collection("tasks").add({ ...tb, title: "מצגת פתיחה למערך", assigneeId: ids[0], lessonId: lessons.energy, dueDate: day(-1), priority: "HIGH" });
+  await db.collection("tasks").add({ ...tb, title: "עדכון דף המדריך במוזיאון", assigneeId: ids[2], dueDate: day(8) });
+
+  // Equipment orders and meetings with other teams – the manager's, linked to lessons.
+  const eq = { link: null, notes: null, managerNote: null, projectId: null, proofId: null, approvedAt: now, orderedAt: null, receivedAt: null, createdAt: now, updatedAt: now, estCost: null };
+  await db.collection("equipment").add({ ...eq, item: "פסי מגנזיום", quantity: 2, requesterId: ids[0], lessonId: lessons.energy, status: "APPROVED", neededBy: day(10), notes: 'עבור המערך "המרות אנרגיה – חט"ב"' });
+  await db.collection("equipment").add({ ...eq, item: "כפפות ניטריל (בלי לטקס)", quantity: 100, requesterId: null, lessonId: lessons.kitchen, status: "ORDERED", orderedAt: now });
+  const mt = { notes: null, neededBy: null, proofId: null, createdAt: now, updatedAt: now, status: "OPEN" };
+  await db.collection("meetings").add({ ...mt, topic: "תיאום חומרים מסוכנים (מי חמצן, מגנזיום)", requesterId: null, withTeamId: teamIds["מעבדה"], lessonId: lessons.energy, neededBy: day(4) });
+  await db.collection("meetings").add({ ...mt, topic: "צריך עזרה עם המנדף לפני ההרצה", requesterId: ids[4], withTeamId: null, lessonId: lessons.energy });
+  await db.collection("meetings").add({ ...mt, topic: "לוח זמנים לקבוצות במוזיאון", requesterId: null, withTeamId: teamIds["תפעול"], lessonId: null, status: "SCHEDULED" });
   console.log(`${Object.keys(lessons).length} lessons`);
 
   await db.doc("settings/main").set({ managerName: "המנהל", managerEmail: "manager@example.com", notifyManager: true, remindersEnabled: true }, { merge: true });

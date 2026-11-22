@@ -1,4 +1,5 @@
-import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { deleteDoc, deleteField, doc, getDoc, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { cleanGrades } from "./lessons";
 import { db } from "./firebase";
 import { fail, newRef, queue } from "./actions";
 import { mergeReviews, validateReviews, type ReviewRow } from "./reviews";
@@ -10,7 +11,7 @@ import type { EquipmentRequest, Lesson, LessonActivity, LessonItem, LessonStatus
 
 export type LessonInput = Pick<
   Lesson,
-  "title" | "subject" | "gradeFrom" | "gradeTo" | "location" | "durationMin" | "kind" | "goals" | "summary" | "ownerIds" | "startDate" | "dueDate"
+  "title" | "subject" | "grades" | "location" | "durationMin" | "kind" | "goals" | "summary" | "ownerIds" | "startDate" | "dueDate"
 > & {
   status: LessonStatus;
   reviews: ReviewRow[];
@@ -21,7 +22,7 @@ export type LessonInput = Pick<
 
 function check(input: LessonInput) {
   if (!input.title.trim()) fail("יש להזין שם למערך");
-  if (input.gradeFrom > input.gradeTo) fail("השכבה הראשונה צריכה להיות לפני האחרונה");
+  if (!cleanGrades(input.grades).length) fail("יש לבחור לאיזה גיל המערך (יסודי – כיתות, חטיבת ביניים או תיכון)");
   if (input.startDate && input.dueDate && input.startDate > input.dueDate) fail("תאריך ההתחלה אחרי תאריך היעד");
   const err = validateReviews(input.reviews, input.dueDate);
   if (err) fail(err);
@@ -35,6 +36,7 @@ export async function createLesson(input: LessonInput): Promise<string> {
   const b = writeBatch(db);
   b.set(ref, {
     ...input,
+    grades: cleanGrades(input.grades),
     title: input.title.trim(),
     reviews: mergeReviews(input.reviews, []),
     remindedReviewIds: [],
@@ -61,6 +63,9 @@ export async function updateLesson(id: string, input: LessonInput): Promise<numb
   const b = writeBatch(db);
   b.update(doc(db, "lessons", id), {
     ...input,
+    grades: cleanGrades(input.grades),
+    gradeFrom: deleteField(),
+    gradeTo: deleteField(),
     title: input.title.trim(),
     reviews: mergeReviews(input.reviews, before.reviews),
     reminderSentAt: input.dueDate !== before.dueDate ? null : before.reminderSentAt,

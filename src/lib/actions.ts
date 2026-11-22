@@ -24,6 +24,7 @@ import type {
   Task,
   TaskStatus,
   WorkerPrivate,
+  Member,
 } from "./types";
 
 /**
@@ -55,89 +56,96 @@ async function clearRefs(batch: ReturnType<typeof writeBatch>, col: string, fiel
   snap.forEach((d) => batch.update(d.ref, { [field]: null }));
 }
 
-// ---------------------------------------------------------------- teams & workers
+// ---------------------------------------------------------------- other teams (manager only)
 
-export async function createTeam(name: string) {
-  if (!name.trim()) fail("יש להזין שם צוות");
-  await setDoc(newRef("teams"), { name: name.trim(), createdAt: now() });
+export type TeamInput = { name: string; contactName: string | null; contactEmail: string | null; notes: string | null };
+
+export async function saveTeam(id: string | null, input: TeamInput) {
+  const name = input.name.trim();
+  if (!name) fail("יש להזין שם צוות");
+  if (input.contactEmail && !isEmail(input.contactEmail)) fail("כתובת המייל של איש הקשר לא תקינה");
+  const data = { name, contactName: input.contactName, contactEmail: input.contactEmail?.toLowerCase() ?? null, notes: input.notes };
+  if (id) await updateDoc(doc(db, "teams", id), data);
+  else await setDoc(newRef("teams"), { ...data, createdAt: now() });
 }
+
+/** @deprecated use saveTeam */
+export const createTeam = (name: string) => saveTeam(null, { name, contactName: null, contactEmail: null, notes: null });
 
 export async function deleteTeam(id: string) {
   const b = writeBatch(db);
-  await clearRefs(b, "workers", "teamId", id);
   await clearRefs(b, "meetings", "withTeamId", id);
+  await clearRefs(b, "tasks", "teamId", id);
   b.delete(doc(db, "teams", id));
   await b.commit();
 }
 
-export async function createWorker(input: { name: string; email: string; teamId: string | null }) {
-  const name = input.name.trim();
-  const email = input.email.trim().toLowerCase();
-  if (!name || !isEmail(email)) fail("יש להזין שם וכתובת מייל תקינה");
-  const ref = newRef("workers");
-  const token = newToken();
-  const b = writeBatch(db);
-  b.set(ref, { name, teamId: input.teamId, active: true, createdAt: now() });
-  b.set(doc(db, "workerPrivate", ref.id), { email, token } satisfies WorkerPrivate);
-  b.set(doc(db, "workerLinks", token), { workerId: ref.id });
-  await b.commit();
-}
+// ---------------------------------------------------------------- instructors (מדריכים)
 
 /**
- * Adds many workers in one batch (all or nothing). Teams are matched by name; missing teams are
- * created. Rows must already be validated with parseWorkerLines().
+ * An instructor = workers/{id} (name, shown to the other instructors) + workerPrivate/{id}
+ * (email, manager only) + members/{email} (lets that email sign in). A welcome email with a
+ * first sign-in link is queued.
  */
-export async function createWorkers(rows: { name: string; email: string; team: string | null }[], teams: { id: string; name: string }[]) {
-  if (rows.length > 150) fail("אפשר להוסיף עד 150 עובדים בכל פעם");
-  const teamIds = new Map(teams.map((t) => [t.name.trim(), t.id]));
-  const b = writeBatch(db);
-  for (const r of rows) {
-    let teamId: string | null = null;
-    if (r.team) {
-      teamId = teamIds.get(r.team) ?? null;
-      if (!teamId) {
-        const ref = newRef("teams");
-        b.set(ref, { name: r.team, createdAt: now() });
-        teamIds.set(r.team, ref.id);
-        teamId = ref.id;
-      }
-    }
-    const ref = newRef("workers");
-    const token = newToken();
-    b.set(ref, { name: r.name, teamId, active: true, createdAt: now() });
-    b.set(doc(db, "workerPrivate", ref.id), { email: r.email, token } satisfies WorkerPrivate);
-    b.set(doc(db, "workerLinks", token), { workerId: ref.id });
-  }
-  await b.commit();
+function addInstructor(b: ReturnType<typeof writeBatch>, name: string, email: string) {
+  const ref = newRef("workers");
+  b.set(ref, { name, teamId: null, active: true, createdAt: now() });
+  b.set(doc(db, "workerPrivate", ref.id), { email } satisfies WorkerPrivate);
+  b.set(doc(db, "members", email), { workerId: ref.id, active: true } satisfies Member);
+  queue(b, { type: "instructor-welcome", workerId: ref.id });
 }
 
-export async function updateWorker(id: string, input: { name: string; email: string; teamId: string | null; active: boolean }) {
+async function emailTaken(email: string, exceptWorkerId?: string): Promise<boolean> {
+  const m = await getDoc(doc(db, "members", email));
+  return m.exists() && (m.data() as Member).workerId !== exceptWorkerId;
+}
+
+export async function createWorker(input: { name: string; email: string; teamId?: string | null }) {
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
   if (!name || !isEmail(email)) fail("יש להזין שם וכתובת מייל תקינה");
+  if (await emailTaken(email)) fail("כבר יש מדריך/ה עם המייל הזה");
   const b = writeBatch(db);
-  b.update(doc(db, "workers", id), { name, teamId: input.teamId, active: input.active });
-  b.update(doc(db, "workerPrivate", id), { email });
+  addInstructor(b, name, email);
   await b.commit();
 }
 
-export async function regenerateWorkerLink(id: string) {
-  const priv = await getDoc(doc(db, "workerPrivate", id));
-  const old = (priv.data() as WorkerPrivate | undefined)?.token;
-  const token = newToken();
+/** Adds many instructors in one batch (all or nothing). Rows must be validated with parseWorkerLines(). */
+export async function createWorkers(rows: { name: string; email: string; team?: string | null }[], _teams?: unknown) {
+  if (rows.length > 100) fail("אפשר להוסיף עד 100 מדריכים בכל פעם");
   const b = writeBatch(db);
-  if (old) b.delete(doc(db, "workerLinks", old));
-  b.set(doc(db, "workerLinks", token), { workerId: id });
-  b.update(doc(db, "workerPrivate", id), { token });
+  for (const r of rows) addInstructor(b, r.name, r.email.toLowerCase());
+  await b.commit();
+}
+
+export async function updateWorker(id: string, input: { name: string; email: string; teamId?: string | null; active: boolean }) {
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+  if (!name || !isEmail(email)) fail("יש להזין שם וכתובת מייל תקינה");
+  if (await emailTaken(email, id)) fail("כבר יש מדריך/ה אחר/ת עם המייל הזה");
+  const old = ((await getDoc(doc(db, "workerPrivate", id))).data() as WorkerPrivate | undefined)?.email;
+  const b = writeBatch(db);
+  b.update(doc(db, "workers", id), { name, active: input.active });
+  b.set(doc(db, "workerPrivate", id), { email }, { merge: true });
+  if (old && old !== email) b.delete(doc(db, "members", old));
+  b.set(doc(db, "members", email), { workerId: id, active: input.active } satisfies Member);
+  await b.commit();
+}
+
+/** Sends the welcome email (with a sign-in link) again. */
+export async function resendWelcome(workerId: string) {
+  const b = writeBatch(db);
+  queue(b, { type: "instructor-welcome", workerId });
   await b.commit();
 }
 
 export async function deleteWorker(id: string) {
-  const priv = await getDoc(doc(db, "workerPrivate", id));
-  const token = (priv.data() as WorkerPrivate | undefined)?.token;
+  const email = ((await getDoc(doc(db, "workerPrivate", id))).data() as WorkerPrivate | undefined)?.email;
   const b = writeBatch(db);
   await clearRefs(b, "tasks", "assigneeId", id);
-  if (token) b.delete(doc(db, "workerLinks", token));
+  const owned = await getDocs(query(collection(db, "lessons"), where("ownerIds", "array-contains", id)));
+  owned.forEach((l) => b.update(l.ref, { ownerIds: (l.get("ownerIds") as string[]).filter((x) => x !== id) }));
+  if (email) b.delete(doc(db, "members", email));
   b.delete(doc(db, "workerPrivate", id));
   b.delete(doc(db, "workers", id));
   await b.commit();
@@ -284,7 +292,7 @@ export async function resendTaskEmail(id: string) {
 
 export type EquipmentInput = Pick<
   EquipmentRequest,
-  "item" | "quantity" | "link" | "estCost" | "notes" | "neededBy" | "projectId" | "requesterId"
+  "item" | "quantity" | "link" | "estCost" | "notes" | "neededBy" | "projectId" | "requesterId" | "lessonId"
 >;
 
 /** Added by the manager, so it goes straight to "approved – to order". */
@@ -321,7 +329,7 @@ export const deleteEquipment = (id: string) => deleteDoc(doc(db, "equipment", id
 
 // ---------------------------------------------------------------- meetings
 
-export async function createMeeting(input: Pick<MeetingRequest, "topic" | "notes" | "neededBy" | "withTeamId" | "requesterId">) {
+export async function createMeeting(input: Pick<MeetingRequest, "topic" | "notes" | "neededBy" | "withTeamId" | "requesterId"> & { lessonId?: string | null }) {
   if (!input.topic.trim()) fail("יש להזין נושא");
   const t = now();
   await setDoc(newRef("meetings"), {

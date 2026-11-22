@@ -4,9 +4,36 @@
       "collectionGroup": "tasks",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "assigneeId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "completedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "assigneeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "completedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "emailLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "to",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

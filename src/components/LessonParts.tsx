@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ALLERGENS, HAZARD_ICON, HAZARDS, SAFETY, allergenNames, missingAllergenInfo, summarizeLesson } from "@/lib/allergens";
-import { ACTIVITY_KIND, ITEM_FOR_LABEL, LESSON_STATUS, LESSON_TONE, newItemId } from "@/lib/lessons";
-import { ACTIVITY_KINDS, ITEM_FOR, type Lesson, type LessonActivity, type LessonItem, type LessonStatus } from "@/lib/types";
+import { ACTIVITY_KIND, GRADES, ITEM_FOR_LABEL, LESSON_STATUS, LESSON_TONE, LOCATION, MAIN_LOCATIONS, STAGES, gradeLabel, newItemId } from "@/lib/lessons";
+import { ACTIVITY_KINDS, ITEM_FOR, type Lesson, type LessonLocation, type LessonActivity, type LessonItem, type LessonStatus } from "@/lib/types";
 
 // ---------------------------------------------------------------- read-only bits
 
@@ -247,4 +247,50 @@ export function cleanItems(items: LessonItem[]): LessonItem[] {
 
 export function cleanActivities(rows: LessonActivity[]): LessonActivity[] {
   return rows.filter((r) => r.title.trim()).map((r) => ({ ...r, title: r.title.trim().slice(0, 150) }));
+}
+
+// ---------------------------------------------------------------- ages & place
+
+/**
+ * Who the lesson is for. Elementary: pick the grades (א–ו). Middle school / high school: the whole
+ * stage. Sends checkboxes named "grades" (read with fd.getAll("grades")).
+ */
+export function GradePicker({ initial }: { initial: number[] }) {
+  const [grades, setGrades] = useState<number[]>(initial);
+  const toggle = (gs: number[], on: boolean) =>
+    setGrades((cur) => (on ? [...new Set([...cur, ...gs])] : cur.filter((g) => !gs.includes(g))).sort((a, b) => a - b));
+  const [elem, middle, high] = STAGES;
+  const all = (gs: number[]) => gs.every((g) => grades.includes(g));
+  return (
+    <fieldset className="grade-picker">
+      <legend className="small">לאיזה גיל?</legend>
+      {grades.map((g) => <input key={g} type="hidden" name="grades" value={g} />)}
+      <div className="row" style={{ gap: ".3rem .9rem" }}>
+        <span className="small" style={{ fontWeight: 600 }}>{elem.label}:</span>
+        {elem.grades.map((g) => (
+          <label key={g} className="check small">
+            <input type="checkbox" aria-label={`כיתה ${GRADES[g - 1]}`} checked={grades.includes(g)} onChange={(e) => toggle([g], e.target.checked)} />
+            {GRADES[g - 1]}
+          </label>
+        ))}
+      </div>
+      <div className="row" style={{ gap: ".3rem 1.2rem", marginTop: ".3rem" }}>
+        {[middle, high].map((s) => (
+          <label key={s.key} className="check small">
+            <input type="checkbox" checked={all(s.grades)} onChange={(e) => toggle(s.grades, e.target.checked)} /> {s.label}
+          </label>
+        ))}
+      </div>
+      <div className="muted small" style={{ marginTop: ".25rem" }}>{gradeLabel(grades)}</div>
+    </fieldset>
+  );
+}
+
+export function LocationSelect({ value, name = "location" }: { value?: LessonLocation; name?: string }) {
+  return (
+    <select name={name} defaultValue={value ?? "PARK_LAB"}>
+      {MAIN_LOCATIONS.map((l) => <option key={l} value={l}>{LOCATION[l]}</option>)}
+      {value === "OTHER" && <option value="OTHER">{LOCATION.OTHER}</option>}
+    </select>
+  );
 }

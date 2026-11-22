@@ -176,13 +176,13 @@ export function Overview() {
         </section>
 
         <section className="card">
-          <h2>עומס לפי עובד</h2>
+          <h2>עומס לפי מדריך (משימות)</h2>
           {activeWorkers.length === 0 ? (
-            <p className="empty">עוד אין עובדים. <Link to="/admin/workers">הוספת עובדים</Link></p>
+            <p className="empty">עוד אין מדריכים. <Link to="/admin/instructors">הוספת מדריכים</Link></p>
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>עובד/ת</th><th>צוות</th><th>פתוחות</th><th>בתהליך</th><th>באיחור</th></tr></thead>
+                <thead><tr><th>מדריך/ה</th><th>פתוחות</th><th>בתהליך</th><th>באיחור</th></tr></thead>
                 <tbody>
                   {activeWorkers.map((w) => {
                     const mine = open.filter((t) => t.assigneeId === w.id);
@@ -190,7 +190,6 @@ export function Overview() {
                     return (
                       <tr key={w.id}>
                         <td><Link to={`/admin/tasks?assignee=${w.id}`}>{w.name}</Link></td>
-                        <td className="muted">{(w.teamId && teamMap.get(w.teamId)?.name) ?? "—"}</td>
                         <td>{mine.length}</td>
                         <td>{mine.filter((t) => t.status === "IN_PROGRESS").length}</td>
                         <td className={late ? "danger-text" : ""}>{late}</td>

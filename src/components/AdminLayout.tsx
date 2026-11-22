@@ -8,11 +8,11 @@ import { FlashBox, useFlash } from "./Flash";
 const LINKS = [
   { to: "/admin", label: "סקירה", end: true },
   { to: "/admin/lessons", label: "מערכים" },
+  { to: "/admin/instructors", label: "מדריכים" },
   { to: "/admin/tasks", label: "משימות" },
-  { to: "/admin/projects", label: "פרויקטים" },
-  { to: "/admin/workers", label: "עובדים וצוותים" },
   { to: "/admin/equipment", label: "הזמנות ציוד" },
   { to: "/admin/meetings", label: "פגישות" },
+  { to: "/admin/teams", label: "צוותים" },
   { to: "/admin/reports", label: "דוחות והגדרות" },
 ];
 
@@ -31,7 +31,7 @@ export function AdminLayout() {
         <div className="card">
           <h1>אין הרשאת מנהל</h1>
           <p>
-            החשבון <strong dir="ltr">{user.email}</strong> מחובר, אבל עדיין לא מוגדר כמנהל.
+            החשבון <strong dir="ltr">{user.email}</strong> מחובר, אבל לא מוגדר כמנהל. מדריכים עובדים מהדף <a href="#/me">המערכים שלי</a>.
           </p>
           <p className="muted small">
             ההרשאה נוספת אוטומטית תוך כ-10 דקות אם הכתובת מופיעה ב-ADMIN_EMAILS בהגדרות GitHub (ראו docs/SETUP.md). אחר כך רעננו את הדף.
@@ -55,7 +55,7 @@ export function AdminLayout() {
             ))}
           </nav>
           <div className="row">
-            <Link to="/" className="btn ghost sm">לוח משותף</Link>
+            <Link to="/lessons" className="btn ghost sm">לוח מערכים</Link>
             <button className="btn ghost sm" onClick={() => signOut(auth)}>יציאה</button>
           </div>
         </div>

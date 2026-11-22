@@ -3,67 +3,83 @@ import { db } from "./firebase";
 import { UserError } from "./actions";
 import { submitBlocker } from "./allergens";
 import { uploadLessonFile, type BatchStarter } from "./fileStore";
-import type { Lesson, LessonActivity, LessonItem, LessonSubmission, WithId } from "./types";
+import type { Lesson, LessonActivity, LessonItem, LessonStatus, LessonSubmission, MeetingRequest, WithId } from "./types";
 
 /**
- * Instructor actions from the personal link. Every batch carries a fresh proofs/{id} with the
- * secret token; firestore.rules check that the worker is one of the lesson's instructors.
+ * Instructor actions. The instructor is signed in (email link); firestore.rules check that they
+ * work on the lesson (members/{email}.workerId is in lesson.ownerIds).
  */
-type Who = { token: string; workerId: string; workerName: string };
+export type Who = { workerId: string; workerName: string };
 
-const proofBatch =
-  (who: Who): BatchStarter =>
-  () => {
-    const b = writeBatch(db);
-    const p = doc(collection(db, "proofs"));
-    b.set(p, { token: who.token, workerId: who.workerId, createdAt: Date.now() });
-    return { b, proofId: p.id };
-  };
+const plainBatch: BatchStarter = () => ({ b: writeBatch(db), proofId: null });
 
-/** Save the equipment list / parts of the lesson / safety (and optionally start working on it). */
+const editable = (s: LessonStatus) => ["IDEA", "IN_PROGRESS", "SUBMITTED", "CHANGES_REQUESTED"].includes(s);
+
+/** Save the equipment list / parts of the lesson / safety, and optionally the status. */
 export async function saveMyLesson(
-  who: Who,
+  _who: Who,
   lesson: WithId<Lesson>,
-  edit: { equipment: LessonItem[]; activities: LessonActivity[]; safety: string[] },
+  edit: { equipment: LessonItem[]; activities: LessonActivity[]; safety: string[]; status?: LessonStatus },
 ) {
+  if (!editable(lesson.status)) throw new UserError("המערך כבר אושר – כדי לערוך אותו, המנהל צריך להחזיר אותו לעבודה");
   if (edit.equipment.some((i) => !i.name.trim())) throw new UserError("לכל פריט ציוד צריך שם");
-  // Saving moves an idea / returned lesson to "in progress". Approved lessons are read-only for
-  // instructors until the manager reopens them (also enforced by firestore.rules).
-  let status = lesson.status;
-  if (status === "IDEA" || status === "CHANGES_REQUESTED") status = "IN_PROGRESS";
-  if (status !== "IN_PROGRESS" && status !== "SUBMITTED") throw new UserError("המערך כבר אושר – כדי לערוך אותו, המנהלת צריכה להחזיר אותו לעבודה");
-  const { b, proofId } = proofBatch(who)();
+  let status = edit.status ?? lesson.status;
+  // Saving work on an idea / returned lesson means it's being worked on.
+  if (!edit.status && lesson.status === "CHANGES_REQUESTED") status = "IN_PROGRESS";
+  if (status !== lesson.status && !["IDEA", "IN_PROGRESS"].includes(status)) {
+    throw new UserError('אפשר לסמן "רעיון" או "בכתיבה". לבדיקה שולחים את קובץ המערך.');
+  }
+  const b = writeBatch(db);
   b.update(doc(db, "lessons", lesson.id), {
     equipment: edit.equipment,
     activities: edit.activities,
     safety: edit.safety,
     status,
-    lastProofId: proofId,
     updatedAt: Date.now(),
   });
   await b.commit();
 }
 
-/** Upload the lesson file and send it to the program manager for review (with an email + attachment). */
-export async function submitMyLesson(who: Who, lesson: WithId<Lesson>, file: File, note: string | null, onProgress?: (d: number, t: number) => void) {
+/** Just the status: "idea" or "in progress". */
+export async function setMyLessonStatus(lesson: WithId<Lesson>, status: LessonStatus) {
+  if (!editable(lesson.status)) throw new UserError("המערך כבר אושר – רק המנהל יכול לשנות את הסטטוס שלו");
+  if (!["IDEA", "IN_PROGRESS"].includes(status)) throw new UserError('לבדיקה שולחים את קובץ המערך ("שליחה לבדיקה")');
+  const b = writeBatch(db);
+  b.update(doc(db, "lessons", lesson.id), { status, updatedAt: Date.now() });
+  await b.commit();
+}
+
+export type StatusReport = { done: string | null; next: string | null; blockers: string | null };
+
+/**
+ * Upload the lesson file and send it to the manager for review: the mailer emails the file as an
+ * attachment together with a status report.
+ */
+export async function submitMyLesson(
+  who: Who,
+  lesson: WithId<Lesson>,
+  file: File,
+  report: StatusReport,
+  onProgress?: (d: number, t: number) => void,
+) {
   const blocker = submitBlocker(lesson);
   if (blocker) throw new UserError(blocker);
-  if (!["IDEA", "IN_PROGRESS", "CHANGES_REQUESTED", "SUBMITTED"].includes(lesson.status)) {
-    throw new UserError("המערך כבר אושר. כדי לשלוח גרסה חדשה, המנהלת צריכה להחזיר אותו לעבודה.");
-  }
-  const start = proofBatch(who);
-  const f = await uploadLessonFile(lesson.id, file, who.workerId, start, onProgress);
+  if (!editable(lesson.status)) throw new UserError("המערך כבר אושר. כדי לשלוח גרסה חדשה, המנהל צריך להחזיר אותו לעבודה.");
+  const f = await uploadLessonFile(lesson.id, file, who.workerId, plainBatch, onProgress);
 
-  const { b, proofId } = start();
+  const b = writeBatch(db);
   const t = Date.now();
   const sub = doc(collection(db, "lessonSubmissions"));
+  const clip = (s: string | null) => (s?.trim() ? s.trim().slice(0, 2000) : null);
+  const r = { done: clip(report.done), next: clip(report.next), blockers: clip(report.blockers) };
   b.set(sub, {
     lessonId: lesson.id,
     version: lesson.version + 1,
     fileId: f.fileId,
     fileName: f.name,
     fileSize: f.size,
-    note: note?.slice(0, 2000) ?? null,
+    note: null,
+    report: r.done || r.next || r.blockers ? r : null,
     submittedBy: who.workerId,
     submittedAt: t,
     emailStatus: "pending",
@@ -72,20 +88,43 @@ export async function submitMyLesson(who: Who, lesson: WithId<Lesson>, file: Fil
     decision: null,
     decisionNotes: null,
     decidedAt: null,
-    proofId,
+    proofId: null,
   } satisfies LessonSubmission);
   b.update(doc(db, "lessons", lesson.id), {
     status: "SUBMITTED",
     version: lesson.version + 1,
     lastSubmittedAt: t,
-    lastProofId: proofId,
     updatedAt: t,
   });
-  b.set(doc(collection(db, "outbox")), {
-    type: "lesson-submitted",
+  b.set(doc(collection(db, "outbox")), { type: "lesson-submitted", lessonId: lesson.id, submissionId: sub.id, status: "pending", createdAt: t });
+  await b.commit();
+}
+
+/**
+ * "Request to the manager" about a lesson (e.g. a meeting with the lab is needed). Recorded as a
+ * meeting need for the manager, and the manager gets an email.
+ */
+export async function askManager(who: Who, lesson: WithId<Lesson>, topic: string, notes: string | null) {
+  if (!topic.trim()) throw new UserError("יש לכתוב במה צריך עזרה");
+  const t = Date.now();
+  const b = writeBatch(db);
+  b.set(doc(collection(db, "meetings")), {
+    topic: topic.trim().slice(0, 200),
+    notes: notes?.trim().slice(0, 2000) || null,
+    neededBy: null,
+    status: "OPEN",
+    withTeamId: null,
     lessonId: lesson.id,
-    submissionId: sub.id,
-    proofId,
+    requesterId: who.workerId,
+    proofId: null,
+    createdAt: t,
+    updatedAt: t,
+  } satisfies MeetingRequest);
+  b.set(doc(collection(db, "outbox")), {
+    type: "manager-notice",
+    subject: `בקשה מ${who.workerName} – מערך "${lesson.title}"`.slice(0, 300),
+    lines: [`נושא: ${topic.trim()}`, ...(notes?.trim() ? [`פרטים: ${notes.trim()}`] : []), "נרשם בפגישות הנדרשות של המערך."],
+    path: `/admin/lessons/${lesson.id}`,
     status: "pending",
     createdAt: t,
   });

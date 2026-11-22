@@ -6,7 +6,11 @@ A Hebrew, right-to-left task manager for a team of workers (tested with 30+; the
 - **Firebase** (free Spark plan) stores the data in **Firestore** and handles the manager's sign-in (**Firebase Auth**).
 - **GitHub Actions** runs a small **mailer** every 10 minutes that sends the emails through an SMTP service such as Brevo.
 
-Workers **don't log in**. Each one has a private personal link, included in every email, where they see their tasks, update a status, and ask for equipment or a meeting. The manager signs in with email and password.
+Two kinds of users:
+- **Manager:** does everything – lessons, instructors, other teams (lab, maintenance), equipment orders and meetings. Signs in with email + password (or an email link).
+- **Instructors (מדריכים):** sign in with a **link sent to their email** (no password). They see the lessons and who works on them, set the status of their lessons (idea / in progress), and send the lesson file for review with a status report. They don't see other teams, equipment orders or meetings, and can't delete anything.
+
+The work is organized around **lessons (מערכים)** at the **Science Park** or the **Science Museum**, by age: elementary (by grade), middle school, high school.
 
 ## Features
 
@@ -22,7 +26,7 @@ Workers **don't log in**. Each one has a private personal link, included in ever
 | **Notifications** | Email to the worker when they get a task (or one is moved to them), and a reminder the day before a task is due. Optional emails to the manager when a worker updates a task or asks for equipment or a meeting. |
 | **Email report** | Each worker gets their own report: open tasks grouped as overdue / today / this week / later, plus their equipment and meeting requests. The manager sends it on demand (to everyone or selected workers, with an optional note), or it goes out **weekly** at a day and hour the manager picks. |
 | **Shared board** | Who is working on what, overdue and blocked counts, equipment to order, and meetings needed between teams. It updates live, can be filtered by team, and has a TV mode. |
-| **Workers** | Add one at a time, or paste a whole list (`name, email, team` per line, or columns from a spreadsheet). Each worker gets a private personal link. |
+| **Instructors** | Add one at a time, or paste a list (`name, email` per line). Each one gets a welcome email with a sign-in link. |
 | **Equipment** | A worker asks for an item, and the manager approves or rejects it, then marks it ordered and received. "Approved" is the list of items still to order, with an estimated total cost. |
 | **Meetings** | Records that a meeting is needed, with which team and by when. Booking happens outside the system. |
 
@@ -33,16 +37,15 @@ Emails are sent by the mailer job, so they arrive **within about 10–15 minutes
 ```
 GitHub Pages: React app (Vite, HashRouter)  ──Firebase SDK──▶  Firestore + Firebase Auth
    manager: signs in (#/admin)                                   ▲
-   worker:  personal link (#/w/<token>)                          │ Admin SDK
+   instructor: email-link sign-in (#/me)                         │ Admin SDK
 GitHub Actions "mailer" (every 10 min) ──────────────────────────┘ ──SMTP──▶ Brevo ──▶ inboxes
 ```
 
 There is no server, so **`firestore.rules` is the security layer**:
 
-- The shared board (names, task titles, statuses, equipment, meetings) can be read by anyone with the site address.
-- Workers' **emails and personal-link tokens are private**: only the signed-in manager can read them.
+- Nothing is readable without signing in.
 - Only managers can create or edit tasks, projects and workers. A manager is a Firebase Auth user listed in the `ADMIN_EMAILS` secret; the mailer keeps the `admins` collection in sync with it.
-- A worker's change (status, equipment or meeting request) is accepted only when it is sent together with a fresh "proof" containing that worker's secret token. The rules check it, and the proof can't be read back, so tokens never become public. A worker can change only the status and comment of their own tasks.
+- An instructor is a signed-in email listed in `members/{email}` (created by the manager). The rules let them read lessons and instructors' names, change only their own lessons (equipment, parts, safety, status idea / in progress, sending for review) and their own tasks – nothing else. Teams, equipment orders, meetings, settings and files are manager-only.
 - The app queues emails in an `outbox` collection; the mailer sends them with the service-account key, which lives only in GitHub secrets.
 
 `tests/rules/` checks these rules on the Firestore emulator. It covers what must be allowed and what must be blocked: other workers' tasks, fake or replayed tokens, edits beyond the status, reading private data, and making yourself an admin.
@@ -62,7 +65,7 @@ firestore.rules       security rules (deployed by the deploy workflow)
 
 ## Try it on your own computer (no Firebase account needed)
 
-Everything runs locally with demo data (30 workers). Nothing is emailed for real.
+Everything runs locally with demo data (12 instructors, 6 lessons). Nothing is emailed for real.
 
 **Install once** (Windows, macOS or Linux):
 1. **Node.js 22 LTS**: https://nodejs.org (the "LTS" button).
@@ -78,8 +81,8 @@ npm install
 npm run demo
 ```
 Wait for the box that says **Open: http://localhost:5173**, then open that address:
-- **Manager:** click **ניהול** (manage) → `manager@example.com` / `manager123`
-- **A worker's view:** Workers page → **פתיחה** (open) next to any worker
+- **Manager:** open **"כניסת מנהל עם סיסמה"** (manager sign-in with password) → `manager@example.com` / `manager123`
+- **An instructor's view:** in a private window, type `dana@example.com` → **שלחו לי קישור כניסה** (send me a sign-in link) → **כניסה (הדגמה)** (demo sign-in)
 - **Emails:** the mailer runs every minute; each email is printed in the terminal and listed in the email log on the Reports page
 
 Stop with **Ctrl+C**. Each `npm run demo` starts fresh.

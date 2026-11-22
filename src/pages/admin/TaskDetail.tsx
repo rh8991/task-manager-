@@ -6,7 +6,7 @@ import { PRIORITY, TASK_STATUS } from "@/lib/labels";
 import { deleteTask, resendTaskEmail, setReviewDone, updateTask } from "@/lib/actions";
 import { parseReviewField } from "@/lib/reviews";
 import { ReviewList, ReviewsEditor } from "@/components/Reviews";
-import { PRIORITIES, TASK_STATUSES, type Lesson, type Project, type Task, type TaskUpdate, type Team, type Worker } from "@/lib/types";
+import { PRIORITIES, TASK_STATUSES, type Lesson, type Task, type TaskUpdate, type Team, type Worker } from "@/lib/types";
 import { oneOf, optDate, optStr, str } from "@/lib/formdata";
 import { Badge, Options } from "@/components/ui";
 import { useAct } from "@/components/Flash";
@@ -18,7 +18,6 @@ export function TaskDetail() {
   const navigate = useNavigate();
   const task = useDocument<Task>(`tasks/${id}`);
   const workers = useCollection<Worker>("workers");
-  const projects = useCollection<Project>("projects");
   const teams = useCollection<Team>("teams");
   const lessons = useCollection<Lesson>("lessons");
   const updates = useCollection<TaskUpdate>("taskUpdates", { where: ["taskId", "==", id] });
@@ -38,7 +37,7 @@ export function TaskDetail() {
       priority: oneOf(fd, "priority", PRIORITIES) ?? t.priority,
       status: oneOf(fd, "status", TASK_STATUSES) ?? t.status,
       dueDate: optDate(fd, "dueDate"),
-      projectId: optStr(fd, "projectId"),
+      projectId: t.projectId ?? null,
       assigneeId: optStr(fd, "assigneeId"),
       teamId: optStr(fd, "teamId"),
       lessonId: optStr(fd, "lessonId"),
@@ -89,13 +88,6 @@ export function TaskDetail() {
                   <option value="">— ללא —</option>
                   {assignee && !assignee.active && <option value={assignee.id}>{assignee.name} (לא פעיל/ה)</option>}
                   {workers.data.filter((w) => w.active).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
-              </label>
-              <label>
-                פרויקט
-                <select name="projectId" defaultValue={t.projectId ?? ""}>
-                  <option value="">— ללא —</option>
-                  {projects.data.map((p) => <option key={p.id} value={p.id}>{p.name}{p.active ? "" : " (בארכיון)"}</option>)}
                 </select>
               </label>
               <label>

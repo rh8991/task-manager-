@@ -3,9 +3,10 @@ import { byId, useCollection } from "@/lib/data";
 import { formatDate, formatDateTime, todayLocal } from "@/lib/dates";
 import { createLesson } from "@/lib/lessonActions";
 import { ALLERGENS } from "@/lib/allergens";
-import { GRADES, LESSON_KIND, LESSON_STATUS, LOCATION, SUBJECT, gradeRange, isLessonLate, withLessonDefaults } from "@/lib/lessons";
+import { LESSON_KIND, LESSON_STATUS, LOCATION, MAIN_LOCATIONS, STAGES, SUBJECT, gradeLabel, isLessonLate, lessonStages, withLessonDefaults } from "@/lib/lessons";
+import { GradePicker, LocationSelect } from "@/components/LessonParts";
 import { nextReview } from "@/lib/reviews";
-import { checked, oneOf, optDate, optInt, str } from "@/lib/formdata";
+import { checked, oneOf, optDate, str } from "@/lib/formdata";
 import { LESSON_KINDS, LESSON_LOCATIONS, LESSON_STATUSES, SUBJECTS, type Lesson, type LessonSubmission, type Team, type Worker } from "@/lib/types";
 import { Stat } from "@/components/ui";
 import { ActForm } from "@/components/ActForm";
@@ -37,6 +38,8 @@ export function LessonsPage() {
   const subject = sp.get("subject") ?? "";
   const owner = sp.get("owner") ?? "";
   const allergen = sp.get("allergen") ?? "";
+  const place = sp.get("place") ?? "";
+  const stage = sp.get("stage") ?? "";
   const all = lessons.data.map((l) => withLessonDefaults(l));
   const list = all
     .filter((l) =>
@@ -45,6 +48,8 @@ export function LessonsPage() {
     .filter((l) => !subject || l.subject === subject)
     .filter((l) => !owner || l.ownerIds.includes(owner))
     .filter((l) => !allergen || l.equipment.some((i) => i.allergens.includes(allergen)))
+    .filter((l) => !place || l.location === place)
+    .filter((l) => !stage || lessonStages(l.grades).includes(stage as never))
     .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") || a.title.localeCompare(b.title, "he"));
   const count = (s: Lesson["status"]) => all.filter((l) => l.status === s).length;
 
@@ -54,8 +59,7 @@ export function LessonsPage() {
       title: str(fd, "title"),
       subject: oneOf(fd, "subject", SUBJECTS) ?? "MULTI",
       kind: oneOf(fd, "kind", LESSON_KINDS) ?? "NEW",
-      gradeFrom: optInt(fd, "gradeFrom") ?? 1,
-      gradeTo: optInt(fd, "gradeTo") ?? 12,
+      grades: fd.getAll("grades").map(Number),
       location: oneOf(fd, "location", LESSON_LOCATIONS) ?? "PARK_LAB",
       durationMin: 90,
       goals: null,
@@ -107,12 +111,11 @@ export function LessonsPage() {
           <div className="fields">
             <label>תחום<select name="subject" defaultValue="CHEMISTRY">{SUBJECTS.map((s) => <option key={s} value={s}>{SUBJECT[s]}</option>)}</select></label>
             <label>סוג<select name="kind" defaultValue="NEW">{LESSON_KINDS.map((k) => <option key={k} value={k}>{LESSON_KIND[k]}</option>)}</select></label>
-            <label>משכבה<select name="gradeFrom" defaultValue={7}>{GRADES.map((g, i) => <option key={g} value={i + 1}>{g}</option>)}</select></label>
-            <label>עד שכבה<select name="gradeTo" defaultValue={9}>{GRADES.map((g, i) => <option key={g} value={i + 1}>{g}</option>)}</select></label>
-            <label>מקום<select name="location" defaultValue="PARK_LAB">{LESSON_LOCATIONS.map((l) => <option key={l} value={l}>{LOCATION[l]}</option>)}</select></label>
+            <label>מקום<LocationSelect /></label>
             <label>תאריך התחלה<input type="date" name="startDate" /></label>
             <label>תאריך יעד סופי<input type="date" name="dueDate" /></label>
           </div>
+          <GradePicker initial={[]} />
           <fieldset style={{ border: "1px solid var(--line)", borderRadius: 8, padding: ".5rem .75rem" }}>
             <legend className="small" style={{ fontWeight: 600 }}>מדריכים שעובדים על המערך</legend>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: ".2rem .75rem", maxHeight: 160, overflowY: "auto" }}>
@@ -132,6 +135,14 @@ export function LessonsPage() {
           <option value="working">בעבודה (לא אושרו)</option>
           <option value="all">כל המערכים</option>
           {LESSON_STATUSES.map((s) => <option key={s} value={s}>{LESSON_STATUS[s]}</option>)}
+        </select>
+        <select aria-label="מקום" value={place} onChange={(e) => setFilter("place", e.target.value)} style={{ maxWidth: 160 }}>
+          <option value="">פארק + מוזיאון</option>
+          {MAIN_LOCATIONS.map((x) => <option key={x} value={x}>{LOCATION[x]}</option>)}
+        </select>
+        <select aria-label="גיל" value={stage} onChange={(e) => setFilter("stage", e.target.value)} style={{ maxWidth: 160 }}>
+          <option value="">כל הגילאים</option>
+          {STAGES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
         </select>
         <select aria-label="תחום" value={subject} onChange={(e) => setFilter("subject", e.target.value)} style={{ maxWidth: 150 }}>
           <option value="">כל התחומים</option>
@@ -169,7 +180,7 @@ export function LessonsPage() {
                     <tr key={l.id} className={late ? "overdue" : ""}>
                       <td>
                         <Link to={`/admin/lessons/${l.id}`}><strong>{l.title}</strong></Link>
-                        <div className="muted small">{SUBJECT[l.subject]} · {gradeRange(l.gradeFrom, l.gradeTo)} · {LESSON_KIND[l.kind]}</div>
+                        <div className="muted small">{LOCATION[l.location]} · {SUBJECT[l.subject]} · {gradeLabel(l.grades)} · {LESSON_KIND[l.kind]}</div>
                       </td>
                       <td>{l.ownerIds.map((id) => workerMap.get(id)?.name).filter(Boolean).join(", ") || <span className="muted">לא שויך</span>}</td>
                       <td><LessonStatusBadge status={l.status} /></td>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -14,7 +14,7 @@ import {
   type WhereFilterOp,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
-import { DEFAULT_SETTINGS, type Settings, type WithId } from "./types";
+import { DEFAULT_SETTINGS, type Member, type Settings, type WithId } from "./types";
 
 /**
  * Live data hooks. Collections are small (about 30 workers), so pages subscribe to whole
@@ -69,25 +69,71 @@ export function useSettings(): Live<Settings> {
   return { ...s, data: { ...DEFAULT_SETTINGS, ...(s.data ?? {}) } };
 }
 
-export type AdminState = { user: User | null; isAdmin: boolean; loading: boolean };
+// ---------------------------------------------------------------- who is signed in
 
-/** The signed-in Firebase user and whether they are a manager (admins/{uid} exists). */
-export function useAdmin(): AdminState {
-  const [state, setState] = useState<AdminState>({ user: auth.currentUser, isAdmin: false, loading: true });
-  useEffect(
-    () =>
-      onAuthStateChanged(auth, async (user) => {
-        if (!user) return setState({ user: null, isAdmin: false, loading: false });
-        try {
-          const snap = await getDoc(doc(db, "admins", user.uid));
-          setState({ user, isAdmin: snap.exists(), loading: false });
-        } catch {
-          setState({ user, isAdmin: false, loading: false });
-        }
-      }),
-    [],
+export type Role = "admin" | "instructor" | null;
+export type Session = {
+  user: User | null;
+  role: Role;
+  /** The instructor's worker id (members/{email}.workerId). */
+  workerId: string | null;
+  loading: boolean;
+};
+
+/**
+ * One shared session for the whole app: the Firebase user, and their role:
+ * - "admin" when admins/{uid} exists (synced by the mailer from ADMIN_EMAILS);
+ * - "instructor" when members/{email} exists and is active (created by the manager).
+ */
+let session: Session = { user: null, role: null, workerId: null, loading: true };
+const listeners = new Set<() => void>();
+const publish = (s: Session) => {
+  session = s;
+  listeners.forEach((l) => l());
+};
+
+async function resolveRole(user: User): Promise<Session> {
+  try {
+    const admin = await getDoc(doc(db, "admins", user.uid));
+    if (admin.exists()) return { user, role: "admin", workerId: null, loading: false };
+  } catch {
+    /* not an admin */
+  }
+  const email = user.email?.toLowerCase();
+  if (email && user.emailVerified) {
+    try {
+      const m = await getDoc(doc(db, "members", email));
+      const data = m.data() as Member | undefined;
+      if (data?.active) return { user, role: "instructor", workerId: data.workerId, loading: false };
+    } catch {
+      /* not a member */
+    }
+  }
+  return { user, role: null, workerId: null, loading: false };
+}
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) return publish({ user: null, role: null, workerId: null, loading: false });
+  publish({ ...session, user, loading: true });
+  resolveRole(user).then((s) => {
+    if (auth.currentUser?.uid === user.uid) publish(s);
+  });
+});
+
+export function useSession(): Session {
+  return useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => session,
   );
-  return state;
+}
+
+/** Kept for older callers: manager = admin role. */
+export function useAdmin(): { user: User | null; isAdmin: boolean; loading: boolean } {
+  const s = useSession();
+  return { user: s.user, isAdmin: s.role === "admin", loading: s.loading };
 }
 
 /** Map of id → document, for looking up names. */

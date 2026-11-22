@@ -6,7 +6,7 @@ import { OPEN_TASKS } from "@/lib/queries";
 import { formatDate, todayLocal } from "@/lib/dates";
 import { PRIORITY, TASK_STATUS } from "@/lib/labels";
 import { createTask, setTaskStatus } from "@/lib/actions";
-import { PRIORITIES, TASK_STATUSES, type Lesson, type Project, type Task, type Team, type Worker } from "@/lib/types";
+import { PRIORITIES, TASK_STATUSES, type Lesson, type Task, type Team, type Worker } from "@/lib/types";
 import { oneOf, optDate, optStr, str } from "@/lib/formdata";
 import { Badge, Options } from "@/components/ui";
 import { useAct } from "@/components/Flash";
@@ -20,16 +20,13 @@ export function TasksPage() {
   const [editorKey, setEditorKey] = useState(0); // re-mount the reviews editor after a save
   const today = todayLocal();
   const workers = useCollection<Worker>("workers");
-  const projects = useCollection<Project>("projects");
   const teams = useCollection<Team>("teams");
   const lessons = useCollection<Lesson>("lessons");
   const workerMap = byId(workers.data);
-  const projectMap = byId(projects.data);
   const teamMap = byId(teams.data);
   const lessonMap = byId(lessons.data);
   const openLessons = lessons.data.filter((l) => l.status !== "ARCHIVED").sort((a, b) => a.title.localeCompare(b.title, "he"));
   const activeWorkers = workers.data.filter((w) => w.active).sort((a, b) => a.name.localeCompare(b.name, "he"));
-  const activeProjects = projects.data.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, "he"));
 
   const status = sp.get("status") ?? "open";
   // Finished tasks pile up over time: load them only when the filter asks for them.
@@ -57,7 +54,7 @@ export function TasksPage() {
       description: optStr(fd, "description"),
       priority: oneOf(fd, "priority", PRIORITIES) ?? "MEDIUM",
       dueDate: optDate(fd, "dueDate"),
-      projectId: optStr(fd, "projectId"),
+      projectId: null,
       assigneeId,
       teamId: optStr(fd, "teamId"),
       lessonId: optStr(fd, "lessonId"),
@@ -89,13 +86,6 @@ export function TasksPage() {
               <select name="assigneeId" defaultValue="">
                 <option value="">— ללא —</option>
                 {activeWorkers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </label>
-            <label>
-              פרויקט
-              <select name="projectId" defaultValue="">
-                <option value="">— ללא —</option>
-                {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
             <label>
@@ -150,10 +140,6 @@ export function TasksPage() {
           <option value="none">ללא אחראי</option>
           {activeWorkers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
         </select>
-        <select name="project" defaultValue={project} style={{ maxWidth: 180 }}>
-          <option value="">כל הפרויקטים</option>
-          {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
         <select name="team" defaultValue={team} style={{ maxWidth: 160 }}>
           <option value="">כל המחלקות</option>
           {teams.data.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -176,7 +162,7 @@ export function TasksPage() {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>משימה</th><th>עובד/ת / מחלקה</th><th>מערך / פרויקט</th><th>עדיפות</th><th>יעד</th><th>סטטוס</th></tr></thead>
+              <thead><tr><th>משימה</th><th>עובד/ת / מחלקה</th><th>מערך</th><th>עדיפות</th><th>יעד</th><th>סטטוס</th></tr></thead>
               <tbody>
                 {list.map((t) => {
                   const late = t.status !== "DONE" && !!t.dueDate && t.dueDate < today;
@@ -189,8 +175,7 @@ export function TasksPage() {
                       </td>
                       <td className="muted">
                         {t.lessonId && lessonMap.get(t.lessonId) ? <Link to={`/admin/lessons/${t.lessonId}`}>{lessonMap.get(t.lessonId)!.title}</Link> : null}
-                        {t.projectId && <div className="small">{projectMap.get(t.projectId)?.name}</div>}
-                        {!t.lessonId && !t.projectId && "—"}
+                        {!t.lessonId && "משימה כללית"}
                       </td>
                       <td><Badge value={t.priority} label={PRIORITY[t.priority]} /></td>
                       <td className={`nowrap ${late ? "danger-text" : ""}`}>{formatDate(t.dueDate) || "—"}</td>

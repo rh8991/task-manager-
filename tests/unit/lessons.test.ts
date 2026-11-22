@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { allergenCheck, allergenNames, submitBlocker, summarizeLesson } from "@/lib/allergens";
 import { fileProblem, joinBytes, splitBytes } from "@/lib/files";
-import { gradeRange, isLessonLate } from "@/lib/lessons";
+import { gradeLabel, isLessonLate, lessonStages, withLessonDefaults } from "@/lib/lessons";
+import { lessonSubmittedEmail, statusReportRows } from "@/lib/lesson-emails";
 import type { LessonItem } from "@/lib/types";
 
 const item = (over: Partial<LessonItem>): LessonItem => ({
@@ -77,13 +78,55 @@ describe("files", () => {
 });
 
 describe("lesson helpers", () => {
-  it("grade ranges in Hebrew", () => {
-    expect(gradeRange(7, 9)).toBe("כיתות ז–ט");
-    expect(gradeRange(11, 12)).toBe("כיתות יא–יב");
-    expect(gradeRange(3, 3)).toBe("כיתה ג");
+  it("age labels by school stage", () => {
+    expect(gradeLabel([3, 4])).toBe("יסודי (ג–ד)");
+    expect(gradeLabel([1, 2, 3, 4, 5, 6])).toBe("יסודי (א–ו)");
+    expect(gradeLabel([2, 5])).toBe("יסודי (ב, ה)");
+    expect(gradeLabel([7, 8, 9])).toBe("חטיבת ביניים");
+    expect(gradeLabel([7, 8, 9, 10, 11, 12])).toBe('חט"ב + תיכון');
+    expect(gradeLabel([6, 7, 8, 9])).toBe('יסודי (ו) + חט"ב');
+    expect(gradeLabel([])).toBe("גיל לא נקבע");
+    expect(lessonStages([4, 10, 11, 12])).toEqual(["ELEMENTARY", "HIGH"]);
+  });
+  it("old lessons with a grade range are converted", () => {
+    expect(withLessonDefaults({ gradeFrom: 7, gradeTo: 9 }).grades).toEqual([7, 8, 9]);
+    expect(withLessonDefaults({ grades: [9, 3, 3, 40] }).grades).toEqual([3, 9]);
   });
   it("late only while still being worked on", () => {
     expect(isLessonLate({ status: "IN_PROGRESS", dueDate: "2026-11-01" }, "2026-11-16")).toBe(true);
     expect(isLessonLate({ status: "APPROVED", dueDate: "2026-11-01" }, "2026-11-16")).toBe(false);
+  });
+});
+
+describe("status report sent with the lesson file", () => {
+  const lesson = withLessonDefaults({
+    title: "המרות אנרגיה", status: "IN_PROGRESS", location: "PARK_LAB", grades: [7, 8, 9], dueDate: "2026-11-30",
+    reviews: [
+      { id: "a", date: "2026-11-10", note: "טיוטה", done: true, doneAt: 1 },
+      { id: "b", date: "2026-11-25", note: "הרצה", done: false, doneAt: null },
+    ],
+    equipment: [item({ name: "מגנזיום", quantity: "2", toOrder: true }), item({ name: "בלונים", allergens: ["LATEX"] })],
+  });
+  it("lists deadline, review progress, items to order and what the instructor wrote", () => {
+    const rows = Object.fromEntries(statusReportRows(lesson, { done: "כל ההדגמות", next: "התחרות", blockers: null }, "2026-11-22"));
+    expect(rows["תאריך יעד סופי"]).toBe("30/11/2026 (עוד 8 ימים)");
+    expect(rows["ביקורות"]).toBe("1 מתוך 2 בוצעו · הבאה: 25/11/2026 – הרצה");
+    expect(rows["רשימת ציוד"]).toBe("2 פריטים · צריך להזמין: מגנזיום (2)");
+    expect(rows["מקום וגיל"]).toBe("פארק המדע · חטיבת ביניים");
+    expect(rows["מה הושלם"]).toBe("כל ההדגמות");
+    expect(rows["חסמים / צריך מהמנהל"]).toBeUndefined();
+    expect(Object.fromEntries(statusReportRows(lesson, null, "2026-12-03"))["תאריך יעד סופי"]).toContain("באיחור של 3 ימים");
+  });
+  it("email shows the report, escapes HTML and mentions the attachment", () => {
+    const e = lessonSubmittedEmail({
+      lesson, ownerNames: ["דנה"], submittedBy: "דנה", version: 2, fileName: "מערך.pdf", note: null,
+      report: { done: "<script>x</script>", next: null, blockers: "צריך פגישה עם המעבדה" }, today: "2026-11-22", url: "https://x/#/admin/lessons/1",
+    });
+    expect(e.subject).toBe("מערך לבדיקה: המרות אנרגיה (גרסה 2)");
+    expect(e.html).toContain("דוח סטטוס");
+    expect(e.html).toContain("צריך פגישה עם המעבדה");
+    expect(e.html).not.toContain("<script>x</script>");
+    expect(e.html).toContain("מערך.pdf");
+    expect(e.text).toContain("- מה הושלם: <script>x</script>");
   });
 });

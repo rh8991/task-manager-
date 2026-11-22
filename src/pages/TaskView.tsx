@@ -1,44 +1,38 @@
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { useAdmin, useCollection, useDocument } from "@/lib/data";
 import { formatDate, formatDateTime, todayLocal } from "@/lib/dates";
 import { PRIORITY, TASK_STATUS } from "@/lib/labels";
 import { nextReview } from "@/lib/reviews";
-import type { Project, Task, TaskUpdate, Team, Worker } from "@/lib/types";
+import type { Lesson, Task, TaskUpdate, Team, Worker } from "@/lib/types";
 import { Badge } from "@/components/ui";
 import { ReviewList } from "@/components/Reviews";
 
 /** Read-only view of one task, opened from the shared board. */
 export function TaskView() {
   const { id = "" } = useParams();
-  const [sp] = useSearchParams();
-  const w = sp.get("w");
-  const back = w ? `/?w=${w}` : "/";
   const { isAdmin } = useAdmin();
 
   const task = useDocument<Task>(`tasks/${id}`);
   const t = task.data;
   const assignee = useDocument<Worker>(t?.assigneeId ? `workers/${t.assigneeId}` : null);
-  const team = useDocument<Team>(assignee.data?.teamId ? `teams/${assignee.data.teamId}` : null);
-  const project = useDocument<Project>(t?.projectId ? `projects/${t.projectId}` : null);
-  const updates = useCollection<TaskUpdate>("taskUpdates", { where: ["taskId", "==", id] });
+  // Teams and the full history are the manager's; instructors see their own task and its lesson.
+  const team = useDocument<Team>(isAdmin && t?.teamId ? `teams/${t.teamId}` : null);
+  const project = useDocument<Lesson>(t?.lessonId ? `lessons/${t.lessonId}` : null);
+  const updates = useCollection<TaskUpdate>(isAdmin ? "taskUpdates" : null, { where: ["taskId", "==", id] });
   const workers = useCollection<Worker>("workers");
 
-  const header = (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <Link to={back} className="brand">→ לוח משימות משותף</Link>
-        <span style={{ flex: 1 }} />
-        {isAdmin && t && <Link to={`/admin/tasks/${id}`} className="btn ghost sm">עריכה</Link>}
-      </div>
-    </header>
-  );
+  const header = isAdmin && t ? (
+    <div className="row no-print" style={{ justifyContent: "flex-end" }}>
+      <Link to={`/admin/tasks/${id}`} className="btn ghost sm">עריכה</Link>
+    </div>
+  ) : null;
 
-  if (task.loading) return <>{header}<main className="container"><p className="muted">טוען…</p></main></>;
+  if (task.loading) return <>{header}<p className="muted">טוען…</p></>;
   if (!t) {
     return (
       <>
         {header}
-        <main className="container"><div className="card"><h1>המשימה לא נמצאה</h1><p>ייתכן שהיא נמחקה.</p></div></main>
+        <div className="card"><h1>המשימה לא נמצאה</h1><p>ייתכן שהיא נמחקה.</p></div>
       </>
     );
   }
@@ -52,7 +46,7 @@ export function TaskView() {
   return (
     <>
       {header}
-      <main className="container" style={{ maxWidth: 900 }}>
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>
         <div className="spread">
           <h1 style={{ marginBottom: ".25rem" }}>{t.title}</h1>
           <div className="row">
@@ -62,8 +56,8 @@ export function TaskView() {
         </div>
 
         <div className="stats" style={{ marginTop: "1rem" }}>
-          <div className="stat"><div className="lbl">אחראי/ת</div><div><strong>{assignee.data?.name ?? "לא שויך"}</strong>{team.data && <span className="muted small"> · {team.data.name}</span>}</div></div>
-          <div className="stat"><div className="lbl">פרויקט</div><div><strong>{project.data?.name ?? "—"}</strong></div></div>
+          <div className="stat"><div className="lbl">אחראי/ת</div><div><strong>{assignee.data?.name ?? "לא שויך"}</strong>{team.data && <span className="muted small"> · מחלקה: {team.data.name}</span>}</div></div>
+          <div className="stat"><div className="lbl">מערך</div><div><strong>{project.data ? <Link to={`/lesson/${project.data.id}`}>{project.data.title}</Link> : "משימה כללית"}</strong></div></div>
           <div className={`stat${late ? " alert" : ""}`}>
             <div className="lbl">תאריך יעד</div>
             <div className={late ? "danger-text" : ""}><strong>{t.dueDate ? formatDate(t.dueDate) : "לא נקבע"}</strong>{late && " · באיחור"}</div>
@@ -112,7 +106,7 @@ export function TaskView() {
             {t.completedAt && ` · הושלמה: ${formatDateTime(t.completedAt)}`}
           </p>
         </section>
-      </main>
+      </div>
     </>
   );
 }

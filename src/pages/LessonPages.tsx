@@ -1,101 +1,117 @@
 import { useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
-import { byId, useAdmin, useCollection, useDocument } from "@/lib/data";
+import { Link, Navigate, useParams, useSearchParams } from "react-router";
+import { byId, useAdmin, useCollection, useDocument, useSession } from "@/lib/data";
 import { formatDate, formatDateTime, todayLocal } from "@/lib/dates";
 import { ALLERGENS, HAZARD_ICON, HAZARDS, SAFETY, allergenCheck, allergenNames, summarizeLesson } from "@/lib/allergens";
-import { ACTIVITY_KIND, GRADES, ITEM_FOR_LABEL, LESSON_KIND, LESSON_STATUS, LOCATION, SUBJECT, gradeRange, isLessonLate, withLessonDefaults } from "@/lib/lessons";
+import { ACTIVITY_KIND, ITEM_FOR_LABEL, LESSON_KIND, LESSON_STATUS, LOCATION, MAIN_LOCATIONS, STAGES, SUBJECT, gradeLabel, isLessonLate, lessonStages, withLessonDefaults, type Stage } from "@/lib/lessons";
 import { nextReview } from "@/lib/reviews";
 import { ITEM_FOR, SUBJECTS, type Lesson, type LessonStatus, type LessonSubmission, type WithId, type Worker } from "@/lib/types";
 import { ReviewList } from "@/components/Reviews";
 import { LessonStatusBadge, SafetyTags } from "@/components/LessonParts";
 
-function TopBar({ back = "/", children }: { back?: string; children?: React.ReactNode }) {
-  return (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <Link to={back} className="brand">→ לוח משימות משותף</Link>
-        <span style={{ flex: 1 }} />
-        {children}
-      </div>
-    </header>
-  );
+/** The page header is StaffLayout's; this keeps the old call sites simple. */
+function TopBar({ children }: { back?: string; children?: React.ReactNode }) {
+  return children ? <div className="row no-print" style={{ justifyContent: "flex-end", marginBottom: ".5rem" }}>{children}</div> : null;
 }
 
 const BOARD_COLUMNS: LessonStatus[] = ["IDEA", "IN_PROGRESS", "SUBMITTED", "CHANGES_REQUESTED", "APPROVED", "ACTIVE"];
 
-/** #/lessons – every lesson by status: who works on it and the deadline. */
+/** #/lessons – every lesson by status: who works on it and the deadline. Park / museum tabs, age filter. */
 export function LessonsBoard() {
   const [sp, setSp] = useSearchParams();
   const subject = sp.get("subject") ?? "";
-  const w = sp.get("w");
+  const place = sp.get("place") ?? "";
+  const stage = sp.get("stage") ?? "";
+  const owner = sp.get("owner") ?? "";
   const lessons = useCollection<Lesson>("lessons");
   const workers = useCollection<Worker>("workers");
   const workerMap = byId(workers.data);
   const today = todayLocal();
-  const list = lessons.data.map((l) => withLessonDefaults(l)).filter((l) => !subject || l.subject === subject);
+  const set = (k: string, v: string) => {
+    const next = new URLSearchParams(sp);
+    if (v) next.set(k, v);
+    else next.delete(k);
+    setSp(next);
+  };
+  const all = lessons.data.map((l) => withLessonDefaults(l)).filter((l) => l.status !== "ARCHIVED");
+  const list = all
+    .filter((l) => !place || l.location === place)
+    .filter((l) => !subject || l.subject === subject)
+    .filter((l) => !stage || lessonStages(l.grades).includes(stage as Stage))
+    .filter((l) => !owner || l.ownerIds.includes(owner));
+  const instructors = workers.data.filter((w) => w.active).sort((a, b) => a.name.localeCompare(b.name, "he"));
 
   return (
-    <>
-      <TopBar back={w ? `/?w=${w}` : "/"}>
-        <Link to={`/allergens${w ? `?w=${w}` : ""}`} className="btn ghost sm">בודק אלרגיות</Link>
-      </TopBar>
-      <main className="container" style={{ maxWidth: 1400 }}>
-        <div className="spread">
-          <h1>מערכים – תכנית המדעים</h1>
-          <div className="row">
-            <button className={`btn sm ${!subject ? "" : "ghost"}`} onClick={() => setSp(w ? { w } : {})}>הכול</button>
-            {SUBJECTS.map((s) => (
-              <button key={s} className={`btn sm ${subject === s ? "" : "ghost"}`} onClick={() => setSp({ ...(w ? { w } : {}), subject: s })}>{SUBJECT[s]}</button>
-            ))}
-          </div>
+    <div style={{ maxWidth: 1400, margin: "0 auto" }}>
+      <h1>מערכים – תכנית המדעים</h1>
+      <div className="tabs" style={{ marginBottom: ".6rem" }}>
+        <button className={`btn ${!place ? "" : "ghost"}`} onClick={() => set("place", "")}>הכול ({all.length})</button>
+        {MAIN_LOCATIONS.map((x) => (
+          <button key={x} className={`btn ${place === x ? "" : "ghost"}`} onClick={() => set("place", x)}>
+            {LOCATION[x]} ({all.filter((l) => l.location === x).length})
+          </button>
+        ))}
+      </div>
+      <div className="card row">
+        <select aria-label="גיל" value={stage} onChange={(e) => set("stage", e.target.value)} style={{ maxWidth: 170 }}>
+          <option value="">כל הגילאים</option>
+          {STAGES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+        </select>
+        <select aria-label="תחום" value={subject} onChange={(e) => set("subject", e.target.value)} style={{ maxWidth: 150 }}>
+          <option value="">כל התחומים</option>
+          {SUBJECTS.map((x) => <option key={x} value={x}>{SUBJECT[x]}</option>)}
+        </select>
+        <select aria-label="מדריך" value={owner} onChange={(e) => set("owner", e.target.value)} style={{ maxWidth: 170 }}>
+          <option value="">כל המדריכים</option>
+          {instructors.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </select>
+        <span className="muted small">{list.length} מערכים</span>
+      </div>
+      {lessons.loading ? (
+        <p className="muted">טוען…</p>
+      ) : (
+        <div className="kanban">
+          {BOARD_COLUMNS.map((st) => {
+            const col = list.filter((l) => l.status === st).sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
+            return (
+              <div key={st} className="kanban-col">
+                <h3><span>{LESSON_STATUS[st]}</span><span className="muted">{col.length}</span></h3>
+                {col.map((l) => {
+                  const late = isLessonLate(l, today);
+                  const r = nextReview(l.reviews);
+                  return (
+                    <div key={l.id} className="kanban-card">
+                      <Link to={`/lesson/${l.id}`} className="task-link"><strong>{l.title}</strong></Link>
+                      <span className="muted small">{LOCATION[l.location]} · {gradeLabel(l.grades)}</span>
+                      <span className="muted small">{SUBJECT[l.subject]} · {LESSON_KIND[l.kind]}</span>
+                      <span className="small">👤 {l.ownerIds.map((id) => workerMap.get(id)?.name).filter(Boolean).join(", ") || "לא שויך"}</span>
+                      {l.dueDate && <span className={`small ${late ? "danger-text" : "muted"}`}>יעד: {formatDate(l.dueDate)}{late && " · באיחור"}</span>}
+                      {r && <span className="small muted">ביקורת: {formatDate(r.date)}{r.note && ` – ${r.note}`}</span>}
+                      <SafetyTags lesson={l} />
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
-        {lessons.loading ? (
-          <p className="muted">טוען…</p>
-        ) : (
-          <div className="kanban">
-            {BOARD_COLUMNS.map((st) => {
-              const col = list.filter((l) => l.status === st).sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
-              return (
-                <div key={st} className="kanban-col">
-                  <h3><span>{LESSON_STATUS[st]}</span><span className="muted">{col.length}</span></h3>
-                  {col.map((l) => {
-                    const late = isLessonLate(l, today);
-                    const r = nextReview(l.reviews);
-                    return (
-                      <div key={l.id} className="kanban-card">
-                        <Link to={`/lesson/${l.id}${w ? `?w=${w}` : ""}`} className="task-link"><strong>{l.title}</strong></Link>
-                        <span className="muted small">{SUBJECT[l.subject]} · {gradeRange(l.gradeFrom, l.gradeTo)} · {LESSON_KIND[l.kind]}</span>
-                        <span className="small">👤 {l.ownerIds.map((id) => workerMap.get(id)?.name).filter(Boolean).join(", ") || "לא שויך"}</span>
-                        {l.dueDate && <span className={`small ${late ? "danger-text" : "muted"}`}>יעד: {formatDate(l.dueDate)}{late && " · באיחור"}</span>}
-                        {r && <span className="small muted">ביקורת: {formatDate(r.date)}{r.note && ` – ${r.note}`}</span>}
-                        <SafetyTags lesson={l} />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
-    </>
+      )}
+    </div>
   );
 }
 
 /** #/lesson/:id – read-only view of a lesson (no files). */
 export function LessonView() {
   const { id = "" } = useParams();
-  const [sp] = useSearchParams();
-  const w = sp.get("w");
   const { isAdmin } = useAdmin();
   const doc = useDocument<Lesson>(`lessons/${id}`);
   const workers = useCollection<Worker>("workers");
   const subs = useCollection<LessonSubmission>("lessonSubmissions", { where: ["lessonId", "==", id] });
   const workerMap = byId(workers.data);
-  const back = w ? `/lessons?w=${w}` : "/lessons";
+  const back = "/lessons";
 
-  if (doc.loading) return <><TopBar /><main className="container"><p className="muted">טוען…</p></main></>;
-  if (!doc.data) return <><TopBar /><main className="container"><div className="card"><h1>המערך לא נמצא</h1></div></main></>;
+  if (doc.loading) return <p className="muted">טוען…</p>;
+  if (!doc.data) return <div className="card"><h1>המערך לא נמצא</h1></div>;
   const l = withLessonDefaults(doc.data);
   const s = summarizeLesson(l);
   const history = [...subs.data].sort((a, b) => b.submittedAt - a.submittedAt);
@@ -106,13 +122,13 @@ export function LessonView() {
         <Link to={`/lesson/${l.id}/print`} className="btn ghost sm">רשימת ציוד להדפסה</Link>
         {isAdmin && <Link to={`/admin/lessons/${l.id}`} className="btn ghost sm">עריכה</Link>}
       </TopBar>
-      <main className="container" style={{ maxWidth: 960 }}>
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
         <div className="spread">
           <h1 style={{ marginBottom: ".2rem" }}>{l.title}</h1>
           <LessonStatusBadge status={l.status} />
         </div>
         <p className="muted" style={{ marginTop: 0 }}>
-          {SUBJECT[l.subject]} · {LESSON_KIND[l.kind]} · {gradeRange(l.gradeFrom, l.gradeTo)} · {LOCATION[l.location]} · {l.durationMin} דקות
+          {SUBJECT[l.subject]} · {LESSON_KIND[l.kind]} · {gradeLabel(l.grades)} · {LOCATION[l.location]} · {l.durationMin} דקות
         </p>
         <div className="stats">
           <div className="stat"><div className="lbl">מי עובד עליו</div><strong>{l.ownerIds.map((x) => workerMap.get(x)?.name).filter(Boolean).join(", ") || "לא שויך"}</strong></div>
@@ -170,7 +186,7 @@ export function LessonView() {
             </ul>
           )}
         </section>
-      </main>
+      </div>
     </>
   );
 }
@@ -217,8 +233,10 @@ function EquipmentTable({ lesson, print }: { lesson: Lesson; print?: boolean }) 
 /** #/lesson/:id/print – equipment checklist for the lab, with allergen and safety warnings. */
 export function LessonPrint() {
   const { id = "" } = useParams();
-  const doc = useDocument<Lesson>(`lessons/${id}`);
-  if (doc.loading) return <main className="container"><p className="muted">טוען…</p></main>;
+  const session = useSession();
+  const doc = useDocument<Lesson>(session.role ? `lessons/${id}` : null);
+  if (!session.loading && !session.role) return <Navigate to="/login" replace />;
+  if (session.loading || doc.loading) return <main className="container"><p className="muted">טוען…</p></main>;
   if (!doc.data) return <main className="container"><h1>המערך לא נמצא</h1></main>;
   const l = withLessonDefaults(doc.data);
   const s = summarizeLesson(l);
@@ -231,7 +249,7 @@ export function LessonPrint() {
       </div>
       <h1 style={{ marginBottom: ".2rem" }}>רשימת ציוד: {l.title}</h1>
       <p className="muted" style={{ marginTop: 0 }}>
-        {SUBJECT[l.subject]} · כיתות {GRADES[l.gradeFrom - 1]}–{GRADES[l.gradeTo - 1]} · {LOCATION[l.location]} · {l.durationMin} דקות
+        {SUBJECT[l.subject]} · {gradeLabel(l.grades)} · {LOCATION[l.location]} · {l.durationMin} דקות
       </p>
       {(s.food || names.length > 0 || s.hazards.length > 0 || l.safety.length > 0) && (
         <section className="card" style={{ borderColor: "var(--danger)" }}>
@@ -251,23 +269,25 @@ export function LessonPrint() {
 
 /** #/allergens – which lessons contain the selected allergens. */
 export function AllergenCheck() {
-  const [sp] = useSearchParams();
-  const w = sp.get("w");
   const [selected, setSelected] = useState<string[]>([]);
   const [onlyActive, setOnlyActive] = useState(true);
+  const [place, setPlace] = useState("");
+  const [stage, setStage] = useState("");
   const lessons = useCollection<Lesson>("lessons");
   const list = lessons.data
     .map((l) => withLessonDefaults(l))
-    .filter((l) => l.status !== "ARCHIVED" && (!onlyActive || ["APPROVED", "ACTIVE"].includes(l.status)));
+    .filter((l) => l.status !== "ARCHIVED" && (!onlyActive || ["APPROVED", "ACTIVE"].includes(l.status)))
+    .filter((l) => !place || l.location === place)
+    .filter((l) => !stage || lessonStages(l.grades).includes(stage as Stage));
   const r = allergenCheck<WithId<Lesson>>(list, selected);
-  const link = (l: WithId<Lesson>) => `/lesson/${l.id}${w ? `?w=${w}` : ""}`;
+  const link = (l: WithId<Lesson>) => `/lesson/${l.id}`;
 
   return (
     <>
-      <TopBar back={w ? `/?w=${w}` : "/"}>
-        <Link to={`/lessons${w ? `?w=${w}` : ""}`} className="btn ghost sm">לוח מערכים</Link>
+      <TopBar>
+        <Link to="/lessons" className="btn ghost sm">לוח מערכים</Link>
       </TopBar>
-      <main className="container" style={{ maxWidth: 960 }}>
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
         <h1>בודק אלרגיות</h1>
         <p className="muted" style={{ marginTop: "-.5rem" }}>מסמנים את האלרגיות של ילדים בקבוצה ומקבלים אילו מערכים מכילים אותן.</p>
         <section className="card">
@@ -277,6 +297,16 @@ export function AllergenCheck() {
                 <input type="checkbox" checked={selected.includes(k)} onChange={(e) => setSelected((s) => (e.target.checked ? [...s, k] : s.filter((x) => x !== k)))} /> {v}
               </label>
             ))}
+          </div>
+          <div className="row" style={{ marginTop: ".6rem" }}>
+            <select aria-label="מקום" value={place} onChange={(e) => setPlace(e.target.value)} style={{ maxWidth: 170 }}>
+              <option value="">פארק + מוזיאון</option>
+              {MAIN_LOCATIONS.map((x) => <option key={x} value={x}>{LOCATION[x]}</option>)}
+            </select>
+            <select aria-label="גיל" value={stage} onChange={(e) => setStage(e.target.value)} style={{ maxWidth: 170 }}>
+              <option value="">כל הגילאים</option>
+              {STAGES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
           </div>
           <label className="check small" style={{ marginTop: ".6rem" }}>
             <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} /> רק מערכים מאושרים ופעילים
@@ -313,14 +343,14 @@ export function AllergenCheck() {
               <h2>לא מכילים ({r.safe.length})</h2>
               {r.safe.length === 0 ? <p className="empty">אף מערך</p> : (
                 <ul style={{ margin: 0, paddingInlineStart: "1.1rem" }}>
-                  {r.safe.map((l) => <li key={l.id}><Link to={link(l)}>{l.title}</Link> <span className="small muted">· {gradeRange(l.gradeFrom, l.gradeTo)}</span></li>)}
+                  {r.safe.map((l) => <li key={l.id}><Link to={link(l)}>{l.title}</Link> <span className="small muted">· {gradeLabel(l.grades)}</span></li>)}
                 </ul>
               )}
               <p className="muted small" style={{ marginBottom: 0 }}>הבדיקה מבוססת על רשימות הציוד שהוזנו למערכת. תמיד לוודא מול המדריך.</p>
             </section>
           </div>
         )}
-      </main>
+      </div>
     </>
   );
 }

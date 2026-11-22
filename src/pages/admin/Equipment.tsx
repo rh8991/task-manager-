@@ -4,7 +4,7 @@ import { byId, useCollection } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
 import { EQUIPMENT_STATUS } from "@/lib/labels";
 import { createEquipment, deleteEquipment, setEquipmentStatus } from "@/lib/actions";
-import { EQUIPMENT_STATUSES, type EquipmentRequest, type EquipmentStatus, type Project, type Worker } from "@/lib/types";
+import { EQUIPMENT_STATUSES, type EquipmentRequest, type EquipmentStatus, type Lesson, type Worker } from "@/lib/types";
 import { oneOf, optDate, optInt, optNum, optStr, optUrl, str } from "@/lib/formdata";
 import { Badge, Stat } from "@/components/ui";
 import { useAct } from "@/components/Flash";
@@ -38,9 +38,9 @@ export function EquipmentPage() {
   const statuses = filter.key === "closed" ? [...filter.statuses, "PENDING", "APPROVED", "ORDERED"] : ["PENDING", "APPROVED", "ORDERED"];
   const equipment = useCollection<EquipmentRequest>("equipment", { where: ["status", "in", statuses] });
   const workers = useCollection<Worker>("workers");
-  const projects = useCollection<Project>("projects");
+  const lessons = useCollection<Lesson>("lessons");
   const workerMap = byId(workers.data);
-  const projectMap = byId(projects.data);
+  const lessonMap = byId(lessons.data);
 
   const items = equipment.data
     .filter((e) => filter.statuses.includes(e.status))
@@ -57,7 +57,8 @@ export function EquipmentPage() {
         estCost: optNum(fd, "estCost"),
         notes: optStr(fd, "notes"),
         neededBy: optDate(fd, "neededBy"),
-        projectId: optStr(fd, "projectId"),
+        projectId: null,
+        lessonId: optStr(fd, "lessonId"),
         requesterId: optStr(fd, "requesterId"),
       }),
     "הפריט נוסף לרשימת ההזמנות",
@@ -100,10 +101,10 @@ export function EquipmentPage() {
               </select>
             </label>
             <label>
-              פרויקט
-              <select name="projectId" defaultValue="">
+              מערך
+              <select name="lessonId" defaultValue="">
                 <option value="">— ללא —</option>
-                {projects.data.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {lessons.data.filter((x) => x.status !== "ARCHIVED").map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
               </select>
             </label>
           </div>
@@ -131,7 +132,7 @@ export function EquipmentPage() {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>פריט</th><th>כמות</th><th>עלות</th><th>מבקש/ת</th><th>פרויקט</th><th>נדרש עד</th><th>סטטוס</th><th>פעולות</th></tr>
+                <tr><th>פריט</th><th>כמות</th><th>עלות</th><th>עבור</th><th>מערך</th><th>נדרש עד</th><th>סטטוס</th><th>פעולות</th></tr>
               </thead>
               <tbody>
                 {items.map((e) => (
@@ -145,7 +146,7 @@ export function EquipmentPage() {
                     <td>{e.quantity}</td>
                     <td className="nowrap">{e.estCost ? money(e.estCost) : "—"}</td>
                     <td>{(e.requesterId && workerMap.get(e.requesterId)?.name) ?? <span className="muted">מנהל</span>}</td>
-                    <td className="muted">{(e.projectId && projectMap.get(e.projectId)?.name) ?? "—"}</td>
+                    <td className="muted">{e.lessonId && lessonMap.get(e.lessonId) ? <Link to={`/admin/lessons/${e.lessonId}`}>{lessonMap.get(e.lessonId)!.title}</Link> : "—"}</td>
                     <td className="nowrap">{formatDate(e.neededBy) || "—"}</td>
                     <td>
                       <Badge value={e.status} label={EQUIPMENT_STATUS[e.status]} />
