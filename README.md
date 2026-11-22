@@ -69,7 +69,7 @@ Everything runs locally with demo data (12 instructors, 6 lessons). Nothing is e
 
 **Install once** (Windows, macOS or Linux):
 1. **Node.js 22 LTS**: https://nodejs.org (the "LTS" button).
-2. **Java 21**: https://adoptium.net (Temurin 21). The local Firebase database needs it.
+2. **Java 21**: https://adoptium.net (Temurin 21). The local Firebase database needs it. If an older Java (e.g. Java 8) is also installed, that's fine: the scripts find Java 21 by themselves.
 3. **Git**: https://git-scm.com.
 
 **Then, in a terminal** (on Windows: PowerShell):
